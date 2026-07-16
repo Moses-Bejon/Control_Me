@@ -50,7 +50,7 @@ fi
 if [ ! -d "${VENVPATH}venv" ]; then
     echo "Virtual environment not found. Creating one..."
     mkdir -p $VENVPATH
-    python -m venv "${VENVPATH}venv"
+    python3 -m venv "${VENVPATH}venv"
     if [ $? -ne 0 ]; then
         echo "Failed to create virtual environment."
         pause_script
@@ -99,7 +99,7 @@ fi
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
     nohup python main.py --screenshot_llm > ${VENVPATH}/output.log 2>&1 &
 else
-    python main.py --screenshot_llm
+    python3 main.py --screenshot_llm
 fi
 
 # Check if the script was started successfully when run without systemd
