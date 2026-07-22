@@ -30,8 +30,6 @@ ui_icon_schemes = {
 
 ui_elements = {
     "main_button": "Main",
-    "send_button": "Send",
-    "reset_button": "Memory",
     "settings_button": "Settings",
 }
 
@@ -45,7 +43,8 @@ class Ui_MainWindow(object):
         self.icon_scheme = os.environ.get("ICON_SCHEME", "default")
 
         self.MainWindow.setObjectName("MainWindow")
-        self.MainWindow.resize(640, 794)
+        self.MainWindow.resize(1200, 900)
+        self.MainWindow.setMinimumSize(180, 44)
         self.apply_stylesheet()
         font = QtGui.QFont("Segoe UI", 11)
 
@@ -65,16 +64,21 @@ class Ui_MainWindow(object):
         self.tab_widget = QtWidgets.QTabWidget(self.centralwidget)
         self.tab_widget.setFont(font)
         self.tab_widget.setObjectName("tab_widget")
+        self.tab_widget.setMinimumSize(0, 0)
+        self.tab_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Ignored,
+            QtWidgets.QSizePolicy.Policy.Ignored,
+        )
         self.tab_widget.addTab(self.tab1, f"{ui_icon_schemes[self.icon_scheme]["main_icon"]}{ui_elements["main_button"]}")
         self.tab_widget.addTab(self.tab2, f"{ui_icon_schemes[self.icon_scheme]["settings_icon"]}{ui_elements["settings_button"]}")
         self.verticalLayout.addWidget(self.tab_widget)
 
-        # Add credit text at the bottom
-        self.credit_label = QtWidgets.QLabel(self.centralwidget)
-        self.credit_label.setText("Created by <a href='https://github.com/ThanabordeeN/Screenshot_LLM'>ThanabordeeN</a>")
-        self.credit_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.credit_label.setOpenExternalLinks(True)
-        self.verticalLayout.addWidget(self.credit_label)
+        self.compact_label = self.create_label("Waiting for summary.")
+        self.compact_label.setObjectName("compact_label")
+        self.compact_label.setFont(font)
+        self.compact_label.setMinimumSize(0, 0)
+        self.compact_label.setVisible(False)
+        self.verticalLayout.addWidget(self.compact_label)
 
         MainWindow.setCentralWidget(self.centralwidget)
 
@@ -94,52 +98,48 @@ class Ui_MainWindow(object):
     def setup_main_tab(self, font):
         self.tab1 = QtWidgets.QWidget()
         self.tab1.setObjectName("tab1")
+        self.tab1.setMinimumSize(0, 0)
         self.tab1_layout = QtWidgets.QVBoxLayout(self.tab1)
         self.tab1_layout.setObjectName("tab1_layout")
         self.tab1_layout.setSpacing(15)
 
-        self.image_label = self.create_label()
-        self.tab1_layout.addWidget(self.image_label)
+        self.description_text = self.create_text_edit(font)
+        self.description_text.setObjectName("description_text")
+        self.description_text.setMinimumSize(0, 0)
+        self.description_text.setPlaceholderText("A description of the current screen will appear here.")
+        self.tab1_layout.addWidget(self.description_text, stretch=1)
 
-        self.conversation = self.create_text_edit(font)
-        self.tab1_layout.addWidget(self.conversation)
+        self.status_label = self.create_label("Waiting to capture the first screenshot.")
+        self.status_label.setObjectName("status_label")
+        self.status_label.setFont(font)
+        self.status_label.setMinimumSize(0, 0)
+        self.tab1_layout.addWidget(self.status_label)
 
-        self.entry = self.create_line_edit(font)
-        self.tab1_layout.addWidget(self.entry)
-
-        self.loading_label = self.create_label()
-        self.loading_label.setFont(font)
-        self.tab1_layout.addWidget(self.loading_label)
-
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.setSpacing(10)
-
-        self.send_button = self.create_button(f"{ui_icon_schemes[self.icon_scheme]["send_icon"]}{ui_elements["send_button"]}", font)
-        self.send_button.setObjectName("send_button")
-
-        self.reset_memory = self.create_button(f"{ui_icon_schemes[self.icon_scheme]["reset_icon"]}{ui_elements["reset_button"]}", font)
-        self.reset_memory.setObjectName("reset_memory")
-
-        self.equalize_buttons(self.send_button, self.reset_memory)
-
-        button_layout.addWidget(self.send_button)
-        button_layout.addWidget(self.reset_memory)
-
-        self.tab1_layout.addLayout(button_layout)
+        self.pause_button = self.create_button("⏸ Pause", font)
+        self.pause_button.setObjectName("pause_button")
+        self.pause_button.setMinimumSize(0, 0)
+        self.tab1_layout.addWidget(self.pause_button)
 
     def setup_settings_tab(self, font):
-        self.tab2 = QtWidgets.QWidget()
+        self.tab2 = QtWidgets.QScrollArea()
         self.tab2.setObjectName("tab2")
-        self.tab2_layout = QtWidgets.QVBoxLayout(self.tab2)
+        self.tab2.setMinimumSize(0, 0)
+        self.tab2.setWidgetResizable(True)
+        self.tab2.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self.tab2.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tab2_content = QtWidgets.QWidget()
+        self.tab2_content.setObjectName("tab2_content")
+        self.tab2_layout = QtWidgets.QVBoxLayout(self.tab2_content)
         self.tab2_layout.setObjectName("tab2_layout")
-        self.tab2_layout.setSpacing(15)
+        self.tab2_layout.setContentsMargins(0, 14, 0, 0)
+        self.tab2_layout.setSpacing(12)
 
-        self.api_key_label = self.create_label("LLM API Key\n(Any API Key for Ollama)")
+        self.api_key_label = self.create_label("LLM API Key")
         self.api_key_label.setFont(font)
         self.tab2_layout.addWidget(self.api_key_label)
 
         self.api_key_input = self.create_line_edit(font)
-        self.api_key_input.setPlaceholderText("Get your API key from Provider's website")
+        self.api_key_input.setPlaceholderText("Get your API key from your provider")
         self.api_key_input.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
         self.tab2_layout.addWidget(self.api_key_input)
 
@@ -148,7 +148,7 @@ class Ui_MainWindow(object):
         self.tab2_layout.addWidget(self.model_id_label)
 
         self.model_id_input = self.create_line_edit(font)
-        self.model_id_input.setPlaceholderText("Default: minicpm-v:latest")
+        self.model_id_input.setPlaceholderText("Default: gemini/gemini-3.1.flash-lite")
         self.model_id_input.setEchoMode(QtWidgets.QLineEdit.EchoMode.Normal)
         self.tab2_layout.addWidget(self.model_id_input)
 
@@ -157,23 +157,27 @@ class Ui_MainWindow(object):
         self.icon_scheme_label.setFont(font)
         self.tab2_layout.addWidget(self.icon_scheme_label)
 
-        self.icon_scheme_combobox = QtWidgets.QComboBox(self.tab2)
+        self.icon_scheme_combobox = QtWidgets.QComboBox(self.tab2_content)
         self.icon_scheme_combobox.setFont(font)
+        self.icon_scheme_combobox.setMinimumHeight(46)
         self.icon_scheme_combobox.setCurrentText(self.icon_scheme)  # Set initial state
         self.icon_scheme_combobox.addItems(ui_icon_schemes.keys())
         self.icon_scheme_combobox.currentTextChanged.connect(self.change_icon_scheme)
         self.tab2_layout.addWidget(self.icon_scheme_combobox)
 
-        self.description_label = self.create_label("Description")
-        self.description_label.setFont(font)
-        self.description_label.setText("<b>Description</b><br>Powered by Ollama and LiteLLM.<br><a href='https://docs.litellm.ai/docs/'>LiteLLM Documentation</a>")
-        self.tab2_layout.addWidget(self.description_label)
+        self.capture_interval_label = self.create_label("Capture Frequency (seconds)")
+        self.capture_interval_label.setFont(font)
+        self.tab2_layout.addWidget(self.capture_interval_label)
 
-        self.ollama_checkbox = QtWidgets.QCheckBox("Ollama", self.tab2)
+        self.capture_interval_input = self.create_line_edit(font)
+        self.capture_interval_input.setPlaceholderText("Default: 60")
+        self.tab2_layout.addWidget(self.capture_interval_input)
+
+        self.ollama_checkbox = QtWidgets.QCheckBox("Local model", self.tab2_content)
         self.ollama_checkbox.setFont(font)
         self.tab2_layout.addWidget(self.ollama_checkbox)
 
-        self.dark_mode_checkbox = QtWidgets.QCheckBox("Dark Mode", self.tab2)
+        self.dark_mode_checkbox = QtWidgets.QCheckBox("Dark Mode", self.tab2_content)
         self.dark_mode_checkbox.setFont(font)
         self.dark_mode_checkbox.setChecked(self.dark_mode)  # Set initial state
         self.dark_mode_checkbox.stateChanged.connect(self.toggle_dark_mode)
@@ -189,6 +193,8 @@ class Ui_MainWindow(object):
         button_layout.addWidget(self.reset_config)
 
         self.tab2_layout.addLayout(button_layout)
+        self.tab2_layout.addStretch(1)
+        self.tab2.setWidget(self.tab2_content)
 
     def toggle_dark_mode(self, state):
         self.dark_mode = state == QtCore.Qt.CheckState.Checked.value
@@ -198,32 +204,14 @@ class Ui_MainWindow(object):
         os.environ["DARK_MODE"] = "1" if self.dark_mode else "0"
 
     def change_icon_scheme(self, icon_scheme):
+        self.icon_scheme = icon_scheme
         self.MainWindow.findChild(QtWidgets.QLabel, "icon_scheme_label").setText("Icon Scheme\n{}".format(" ".join(list(ui_icon_schemes[icon_scheme].values()))))
 
         self.MainWindow.findChild(QtWidgets.QTabWidget, "tab_widget").setTabText(0, f"{ui_icon_schemes[icon_scheme]["main_icon"]}{ui_elements["main_button"]}")
         self.MainWindow.findChild(QtWidgets.QTabWidget, "tab_widget").setTabText(1, f"{ui_icon_schemes[icon_scheme]["settings_icon"]}{ui_elements["settings_button"]}")
 
-        send_button = self.MainWindow.findChild(QtWidgets.QPushButton, "send_button")
-        send_button.setText(f"{ui_icon_schemes[icon_scheme]["send_icon"]}{ui_elements["send_button"]}")
-        reset_memory = self.MainWindow.findChild(QtWidgets.QPushButton, "reset_memory")
-        reset_memory.setText(f"{ui_icon_schemes[icon_scheme]["reset_icon"]}{ui_elements["reset_button"]}")
-
-        self.equalize_buttons(send_button, reset_memory)
-
         # Update the ICON_SCHEME environment variable
         os.environ["ICON_SCHEME"] = self.icon_scheme
-
-    def equalize_buttons(self, send_button, reset_memory):
-        # Equalize button size
-        if send_button.sizeHint().height() > reset_memory.sizeHint().height():
-            height = send_button.sizeHint().height()
-        else:
-            height = reset_memory.sizeHint().height()
-
-        reset_memory.setMinimumSize(QtCore.QSize(send_button.sizeHint().width(), height))
-        reset_memory.adjustSize()
-        send_button.setMinimumSize(QtCore.QSize(reset_memory.sizeHint().width(), height))
-        send_button.adjustSize()
 
     def apply_stylesheet(self):
         if self.dark_mode:
@@ -379,12 +367,13 @@ class Ui_MainWindow(object):
         label = QtWidgets.QLabel(text, self.centralwidget)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         label.setWordWrap(True)
+        label.setMinimumHeight(42)
         return label
 
     def create_text_edit(self, font):
         text_edit = QtWidgets.QTextEdit(self.centralwidget)
         text_edit.setFont(font)
-        text_edit.setPlaceholderText("🔥 Ask me anything about this screenshot!")
+        text_edit.setPlaceholderText("The live description appears here.")
         text_edit.setReadOnly(True)
         return text_edit
 
@@ -392,13 +381,14 @@ class Ui_MainWindow(object):
         line_edit = QtWidgets.QLineEdit(self.centralwidget)
         line_edit.setPlaceholderText("Enter Your Message 💬")
         line_edit.setFont(font)
+        line_edit.setMinimumHeight(46)
         return line_edit
 
     def create_button(self, text, font, sizeX = 0, sizeY = 0):
         button = QtWidgets.QPushButton(text, self.centralwidget)
         button.setFont(font)
         button.setMinimumWidth(sizeX)
-        button.setMinimumHeight(sizeY)
+        button.setMinimumHeight(sizeY or 46)
         return button
 
     def retranslateUi(self, MainWindow):

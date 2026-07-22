@@ -1,35 +1,48 @@
-pkgname='Screenshot_LLM'
-pkgdesc='AI-Powered Screenshot Analysis'
-pkgver='eeb440e'
-_pkgver='main'
-pkgrel='1'
-arch=('x86_64')
-url="https://github.com/ThanabordeeN/${pkgname}"
+pkgname='control-me-git'
+_srcname='control-me'
+pkgdesc='Personal productivity application'
+pkgver=r0.0000000
+pkgrel=1
+arch=('any')
+url='https://github.com/Moses-Bejon/Control_Me'
 license=('MIT')
-depends=('python' 'tk' 'python-dotenv' 'python-markdown')
-optdepends=('ollama: ollama support.')
-source=("${pkgname}-${_pkgver}::git+${url}.git")
+depends=(
+  'python'
+  'python-pyqt6'
+  'python-dotenv'
+  'python-litellm'
+  'python-ollama'
+  'python-pyscreenshot'
+)
+makedepends=('git')
+provides=('control-me')
+conflicts=('control-me')
+source=("${_srcname}::git+${url}.git")
 b2sums=('SKIP')
 
 pkgver() {
-  cd "${pkgname}-${_pkgver}"
-  git rev-parse --short HEAD || echo 0.0.1
+  cd "${srcdir}/${_srcname}"
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
 }
 
 package() {
-  mkdir -p "${pkgdir}/usr/lib/${pkgname}"
-  cp -r "${srcdir}/${pkgname}-${_pkgver}/"* "${pkgdir}/usr/lib/${pkgname}"
+  local appdir="${pkgdir}/usr/lib/control-me"
+  local source_root="${srcdir}/${_srcname}"
+  local module
 
-  # Add script symlink under /usr/bin
-  mkdir -p "${pkgdir}/usr/bin"
-  ln -sf "/usr/lib/${pkgname}/${pkgname}.sh" "${pkgdir}/usr/bin/${pkgname,,}"
+  install -d "${appdir}"
+  install -Dm644 "${source_root}/main.py" "${appdir}/main.py"
+  install -Dm644 "${source_root}/icon.ico" "${appdir}/icon.ico"
+  while IFS= read -r -d '' module; do
+    install -Dm644 "${module}" "${appdir}/${module#"${source_root}/"}"
+  done < <(find "${source_root}/modules" -type f -name '*.py' -print0)
 
-  # Install service
-  install -D -m 644 "${srcdir}/${pkgname}-${_pkgver}/systemd/user/${pkgname,,}.service" "${pkgdir}/usr/lib/systemd/user/${pkgname,,}.service"
-  install -D -m 644 "${srcdir}/${pkgname}-${_pkgver}/systemd/Screenshot_LLM_systemd.desktop" "${pkgdir}/usr/share/applications/Screenshot_LLM.desktop"
-
-  echo "********************"
-  echo "To enable and start the service:"
-  echo "systemctl --user enable --now ${pkgname,,}.service"
-  echo "********************"
+  install -Dm755 "${source_root}/package/archlinux/control-me" \
+    "${pkgdir}/usr/bin/control-me"
+  install -Dm644 "${source_root}/package/archlinux/control-me.desktop" \
+    "${pkgdir}/usr/share/applications/control-me.desktop"
+  install -Dm644 "${source_root}/package/archlinux/control-me.service" \
+    "${pkgdir}/usr/lib/systemd/user/control-me.service"
+  install -Dm644 "${source_root}/icon.png" \
+    "${pkgdir}/usr/share/pixmaps/control-me.png"
 }

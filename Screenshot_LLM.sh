@@ -97,9 +97,9 @@ fi
 # Run the main Python script in the background with nohup when run without systemd
 # Send a bogus argument to match on to avoid conflicts managing the process
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    nohup python main.py --screenshot_llm > ${VENVPATH}/output.log 2>&1 &
+    nohup python -u main.py --screenshot_llm > ${VENVPATH}/output.log 2>&1 &
 else
-    python3 main.py --screenshot_llm
+    python3 -u main.py --screenshot_llm
 fi
 
 # Check if the script was started successfully when run without systemd

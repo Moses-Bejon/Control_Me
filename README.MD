@@ -1,15 +1,14 @@
 # Screenshot LLM: AI-Powered Screenshot Analysis
 
-Screenshot LLM is a Python application that leverages the power of AI to analyze screenshots.  Built with PyQt6 for a user-friendly interface and integrating with various AI models (including Ollama), it provides insightful information directly from images.
+Screenshot LLM is a Python application that captures the screen on a configurable timer and writes a description of what is visible. Built with PyQt6 for a single-window interface and integrating with various AI models, it turns the live desktop into a continuously updated caption feed.
 
 ## Features
 
-* **Automated Screenshot Detection:** Automatically detects new screenshots saved in a user-specified directory.
-* **Intuitive PyQt6 GUI:**  A clean and easy-to-use graphical interface for seamless interaction.
+* **Timed Screen Capture:** Captures the screen on a configurable interval without watching a screenshots folder.
+* **Single Live Window:** Shows the latest description in one place.
 * **Configurable AI Models:** Supports multiple AI models via configurable API keys and model IDs.
-* **Flexible Configuration:**  Manage settings, including API keys and model selection, through a dedicated settings tab.
-* **Memory Management:**  Allows resetting application memory and configurations.
-* **Ollama Integration (Optional):**  Analyze screenshots using your local Ollama models.
+* **Flexible Configuration:** Manage settings, including API keys and model selection, through a dedicated settings tab.
+* **Local Model Support:** Optionally analyze screenshots using a local Ollama model.
 
 
 ## Getting Started
@@ -53,13 +52,13 @@ These steps will ensure that the `Installer.sh` script is executable, the necess
 2. **Build and install package**
 
    ```sh
-   makepkg --source --install
+   makepkg --syncdeps --install
    ```
 
-This builds a package file and installs it. The `Screenshot_LLM.desktop` is now globally available and executes the systemd service. Alternatively the service can be started manually or on boot:
+This builds and installs the package. The **Control Me** desktop entry launches the application directly. Alternatively, its user service can be started manually or enabled on login:
 
-- Manual start: `systemctl --user start screenshot_llm.service`
-- Start and enable on boot: `systemctl --user enable screenshot_llm.service --now`
+- Manual start: `systemctl --user start control-me.service`
+- Start and enable on login: `systemctl --user enable --now control-me.service`
 
 **From Source Code:**
 
@@ -72,9 +71,9 @@ This builds a package file and installs it. The `Screenshot_LLM.desktop` is now 
 
    ```
    LLM_API_KEY=YOUR_API_KEY  # Your API key for the LLM
-   LLM_MODEL_ID=your_model_id  # (Optional) Your preferred model ID
-   OLLAMA=1  # Set to 1 to enable Ollama integration (requires Ollama to be running)
-   SCREENSHOT_DIRECTORY=C:/path/to/your/screenshots  # Path to your screenshot directory.  Defaults to standard location if not provided.
+   LLM_MODEL_ID=gemini/gemini-3.1.flash-lite  # Default model ID
+   CAPTURE_INTERVAL_SECONDS=60  # How often to capture the screen
+   OLLAMA=0  # Set to 1 to enable local Ollama inference
    ```
 
 3. **Run the Application:**
@@ -85,9 +84,9 @@ This builds a package file and installs it. The `Screenshot_LLM.desktop` is now 
 
 ## Usage
 
-1.  Provide your API keys and configure settings in the `.env` file or the application's settings tab.
-2.  Run the application.  It will monitor your designated screenshot directory.
-3.  New screenshots will be automatically processed and analyzed, providing insights via the user interface.
+1. Provide your API keys and configure settings in the `.env` file or the application's settings tab.
+2. Run the application. It will capture the live screen on the interval you configured.
+3. Each new capture is described directly in the same window.
 
 
 ## Configuration Details
@@ -95,9 +94,9 @@ This builds a package file and installs it. The `Screenshot_LLM.desktop` is now 
 The application uses a `.env` file to store configuration details.  Essential settings include:
 
 *   `LLM_API_KEY`: Your API key for the chosen LLM service.
-*   `LLM_MODEL_ID`: (Optional) The specific model ID to utilize.
-*   `OLLAMA`: (Optional) Set to `1` to enable local LLM inference using Ollama.  Requires Ollama to be running and configured.
-*   `SCREENSHOT_DIRECTORY`: [Optional] Path to the directory containing screenshots.
+*   `LLM_MODEL_ID`: The model ID to use. Defaults to `gemini/gemini-3.1.flash-lite`.
+*   `CAPTURE_INTERVAL_SECONDS`: How often to capture the screen. Defaults to `60`.
+*   `OLLAMA`: Set to `1` to enable local LLM inference using Ollama. Requires Ollama to be running and configured.
 
 ## Environment Variable Overrides
 

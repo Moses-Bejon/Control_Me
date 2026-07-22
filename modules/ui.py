@@ -1,236 +1,302 @@
 import os
-import base64
-import markdown
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QApplication
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import Qt, QSize, QTimer
-from .interface import Ui_MainWindow  # Import the generated UI class
-from .local_generate import Worker_Local
-from .litellm_generate import Worker_litellm
-import dotenv
+import tempfile
+import uuid
+from datetime import datetime
 
-USER_ROLE = "user"
-AI_ROLE = "assistant"
+import dotenv
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox
+
+from .interface import Ui_MainWindow
+from .litellm_generate import Worker_litellm
+from .local_generate import Worker_Local
+
 SCRLLM_ENV_FILE = os.getenv("SCRLLM_ENV_FILE", ".env")
+DEFAULT_MODEL_ID = "gemini/gemini-3.1.flash-lite"
+DEFAULT_CAPTURE_INTERVAL_SECONDS = 60
+COMPACT_WINDOW_WIDTH = 360
+COMPACT_WINDOW_HEIGHT = 170
+CAPTURE_PROMPT = (
+    "Summarize only the key visible activity in this screenshot.\n"
+    "Return only short lines in this exact style:\n"
+    "Productive behaviour: educational youtube video\n"
+    "Productive behaviour: LaTeX writeup\n"
+    "Unproductive behaviour: Youtube football highlights\n"
+    "Unproductive behaviour: Instagram\n"
+    "Use only the most relevant key points. Do not add explanations, bullets, numbering, or extra text."
+)
+
 
 class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
-    def __init__(self, image_path = None):
+    def __init__(self):
         super().__init__()
-        self.setupUi(self)  # Call setupUi on the instance
+        self.setupUi(self)
 
-        self.image_path = image_path
-        self.memory = []
-        self.setup_ui()
+        self.compact_mode = False
+        self.capture_in_progress = False
+        self.capture_paused = False
+        self.current_capture_path = None
+        self.current_worker = None
+
         self.load_config()
-        self.model_id_input.setText(self.LLM_MODEL_ID)
-        self.api_key_input.setText(self.LLM_API_MODEL)
-        self.icon_scheme_combobox.setCurrentText(self.ICON_SCHEME)
+        self.apply_config_to_controls()
+        self.setup_runtime_ui()
+        self.setup_capture_timer()
 
-        if self.OLLAMA == "1":
-            self.ollama_checkbox.setChecked(True)
-        else :
-            self.ollama_checkbox.setChecked(False)     
-
-        if self.DARK_MODE == "1":
-            self.dark_mode_checkbox.setChecked(True)
-        else:
-            self.dark_mode_checkbox.setChecked(False)
-
-        if self.ICON_SCHEME != "":
-            self.icon_scheme_combobox.setCurrentText(self.ICON_SCHEME)
-        else:
-            self.icon_scheme_combobox.setCurrentText("default")
-
-        self.setup_loading_animation()
+        QTimer.singleShot(250, self.capture_and_describe)
 
     def load_config(self):
-            dotenv.load_dotenv(SCRLLM_ENV_FILE, override=True)
-            self.LLM_API_MODEL = os.getenv("LLM_API_KEY")
-            self.LLM_MODEL_ID = os.getenv("LLM_MODEL_ID")
-            self.OLLAMA = os.getenv("OLLAMA")        
-            self.DARK_MODE = os.getenv("DARK_MODE")
-            self.ICON_SCHEME = os.getenv("ICON_SCHEME")
+        dotenv.load_dotenv(SCRLLM_ENV_FILE, override=True)
+        self.LLM_API_MODEL = os.getenv("LLM_API_KEY") or ""
+        self.LLM_MODEL_ID = os.getenv("LLM_MODEL_ID") or DEFAULT_MODEL_ID
+        self.CAPTURE_INTERVAL_SECONDS = self.parse_capture_interval(os.getenv("CAPTURE_INTERVAL_SECONDS"))
+        self.OLLAMA = os.getenv("OLLAMA") or "0"
+        self.DARK_MODE = os.getenv("DARK_MODE") or "0"
+        self.ICON_SCHEME = os.getenv("ICON_SCHEME") or "default"
 
-    def setup_ui(self):
-        self.display_image()
-        self.conversation.setReadOnly(True)
-        self.send_button.clicked.connect(self.send_text)
-        self.reset_memory.clicked.connect(self.reset)
+    def parse_capture_interval(self, value):
+        try:
+            interval = int(value) if value else DEFAULT_CAPTURE_INTERVAL_SECONDS
+        except ValueError:
+            interval = DEFAULT_CAPTURE_INTERVAL_SECONDS
+        return max(5, interval)
+
+    def apply_config_to_controls(self):
+        self.api_key_input.setText(self.LLM_API_MODEL)
+        self.model_id_input.setText(self.LLM_MODEL_ID)
+        self.capture_interval_input.setText(str(self.CAPTURE_INTERVAL_SECONDS))
+        self.icon_scheme_combobox.setCurrentText(self.ICON_SCHEME)
+        self.ollama_checkbox.setChecked(self.OLLAMA == "1")
+        self.dark_mode_checkbox.setChecked(self.DARK_MODE == "1")
+
+    def setup_runtime_ui(self):
+        self.description_text.setReadOnly(True)
+        self.description_text.setPlainText("Capturing the first screenshot...")
+        self.latest_description = ""
+        self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
+        self.setWindowTitle("ControlMe")
+        self.pause_button.clicked.connect(self.toggle_capture_loop)
         self.save_button.clicked.connect(self.save_config)
         self.reset_config.clicked.connect(self.reset_configurations)
-        self.entry.returnPressed.connect(self.send_text)
-        self.entry.setFocus()
-        self.loading_label.setText("")
-    
-    def save_config(self):
-        LLM_API_MODEL = self.api_key_input.text()
-        LLM_MODEL_ID = self.model_id_input.text()
-        ICON_SCHEME = self.icon_scheme_combobox.currentText()
-        with open(SCRLLM_ENV_FILE, "w") as env_file:
-            env_file.write(f"LLM_API_KEY={LLM_API_MODEL}\n")
-            if LLM_MODEL_ID:
-                env_file.write(f"LLM_MODEL_ID={LLM_MODEL_ID}\n")
-            else:
-                env_file.write(f"LLM_MODEL_ID=\n")
-            
-            if self.ollama_checkbox.isChecked():
-                env_file.write(f"OLLAMA=1\n")
-            else:
-                env_file.write(f"OLLAMA=0\n")
-            if self.dark_mode_checkbox.isChecked():
-                env_file.write("DARK_MODE=1\n")
-            else:
-                env_file.write("DARK_MODE=0\n")
-            if ICON_SCHEME:
-                env_file.write(f"ICON_SCHEME={ICON_SCHEME}")
-            else:
-                env_file.write(f"ICON_SCHEME=")
-        self.load_config()
-        self.model_id_input.setText(self.LLM_MODEL_ID)
-        self.api_key_input.setText(self.LLM_API_MODEL)
-        self.icon_scheme_combobox.setCurrentText(self.ICON_SCHEME)
+        self.capture_interval_input.returnPressed.connect(self.save_config)
+        self.update_compact_label()
+        self.update_compact_mode()
 
+    def setup_capture_timer(self):
+        self.capture_timer = QTimer(self)
+        self.capture_timer.setInterval(self.CAPTURE_INTERVAL_SECONDS * 1000)
+        self.capture_timer.timeout.connect(self.capture_and_describe)
+        self.capture_timer.start()
+        self.capture_paused = False
+        self.pause_button.setText("⏸ Pause")
+        self.update_compact_label()
+
+    def set_capture_loop_paused(self, paused, message=None):
+        self.capture_paused = paused
+        if paused:
+            self.capture_timer.stop()
+            self.pause_button.setText("▶ Resume")
+            if message:
+                self.status_label.setText(message)
+        else:
+            self.pause_button.setText("⏸ Pause")
+            self.status_label.setText(message or f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
+            self.capture_timer.start()
+        self.update_compact_label()
+
+    def toggle_capture_loop(self):
+        if self.capture_paused:
+            self.set_capture_loop_paused(False, f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
+            QTimer.singleShot(250, self.capture_and_describe)
+        else:
+            self.set_capture_loop_paused(True, "Capture loop paused.")
+
+    def save_config(self):
+        llm_api_model = self.api_key_input.text()
+        llm_model_id = self.model_id_input.text() or DEFAULT_MODEL_ID
+        capture_interval_seconds = self.parse_capture_interval(self.capture_interval_input.text())
+        icon_scheme = self.icon_scheme_combobox.currentText()
+
+        with open(SCRLLM_ENV_FILE, "w") as env_file:
+            env_file.write(f"LLM_API_KEY={llm_api_model}\n")
+            env_file.write(f"LLM_MODEL_ID={llm_model_id}\n")
+            env_file.write(f"CAPTURE_INTERVAL_SECONDS={capture_interval_seconds}\n")
+            env_file.write(f"OLLAMA={'1' if self.ollama_checkbox.isChecked() else '0'}\n")
+            env_file.write(f"DARK_MODE={'1' if self.dark_mode_checkbox.isChecked() else '0'}\n")
+            env_file.write(f"ICON_SCHEME={icon_scheme}")
+
+        self.load_config()
+        self.apply_config_to_controls()
+        self.restart_capture_timer()
+        self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
         self.show_message("Configuration saved successfully!")
 
-
     def reset_configurations(self):
-        self.LLM_API_MODEL = None
-        self.LLM_MODEL_ID = None
-        self.OLLAMA = "1"
-        self.ollama_checkbox.setChecked(True)
-        self.load_config()
         with open(SCRLLM_ENV_FILE, "w") as env_file:
             env_file.write("LLM_API_KEY=\n")
-            env_file.write("LLM_MODEL_ID=\n")
-            env_file.write("OLLAMA=1\n")
+            env_file.write(f"LLM_MODEL_ID={DEFAULT_MODEL_ID}\n")
+            env_file.write(f"CAPTURE_INTERVAL_SECONDS={DEFAULT_CAPTURE_INTERVAL_SECONDS}\n")
+            env_file.write("OLLAMA=0\n")
             env_file.write("DARK_MODE=0\n")
             env_file.write("ICON_SCHEME=default")
-        self.show_message("Configuration reset successfully!")
-        self.api_key_input.clear()
-        self.model_id_input.clear()
-            
-    def reset(self):
-        self.memory = []
-        self.conversation.clear()
-        self.conversation.append("Ask me anything about this screenshot!\n")
-        self.entry.setFocus()
 
-    def display_image(self):
-        pixmap = QPixmap(self.image_path)
-        screen = QApplication.primaryScreen()
-        screen_geometry = screen.geometry()
-        self.w = int(screen_geometry.width() * 0.20)  # 30% of screen width
-        self.h = int(screen_geometry.height() * 0.20)  # 30% of screen height
-        pixmap = pixmap.scaled(self.w, self.h, Qt.AspectRatioMode.KeepAspectRatio)
-        self.resize(self.w, self.h)
-        self.conversation.setMinimumSize(QSize(400, int(self.h/1.2)))
-        self.image_label.setMinimumSize(self.w, self.h)
-        self.image_label.setPixmap(pixmap)
-
-    def send_text(self):        
-        text = self.entry.text().strip()
-        if not text:
-            return
-        self.entry.clear()
-        self.update_conversation(text, USER_ROLE)
-        self.loading_timer.start()
-        self.repaint()
-        if len(self.memory) == 0:
-            if self.ollama_checkbox.isChecked():
-                try:
-                    self.memory.append({'role':USER_ROLE, 'content':text , 'images': [self.image_path]})
-                except Exception as e:
-                    self.show_error_message("No image found")
-                    self.loading_label.setText("")
-                    return
-            else:
-                try:                 
-                    self.memory.append({
-                        'role': USER_ROLE,
-                        'content': [
-                            {'type': 'text', 'text': text},
-                            {'type': 'image_url', 'image_url': 'data:image/png;base64,' + self.image_to_base64()}
-                        ]
-                    })
-                except Exception as e:
-                    self.show_error_message("No image found")
-                    self.loading_label.setText("")
-                    return
-        else:
-            self.memory.append({'role': USER_ROLE, 'content': text})
-        print("Getting response")
         self.load_config()
+        self.apply_config_to_controls()
+        self.restart_capture_timer()
+        self.description_text.setPlainText("Configuration reset. Waiting for the next capture.")
+        self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
+        self.latest_description = ""
+        self.update_compact_label()
+        self.show_message("Configuration reset successfully!")
+
+    def restart_capture_timer(self):
+        self.capture_timer.stop()
+        self.capture_timer.setInterval(self.CAPTURE_INTERVAL_SECONDS * 1000)
+        if not self.capture_paused:
+            self.capture_timer.start()
+
+    def capture_and_describe(self):
+        if self.capture_in_progress or self.capture_paused:
+            return
+
+        self.capture_in_progress = True
+        self.status_label.setText("Capturing screenshot...")
+        self.update_compact_label()
+        self.setWindowOpacity(0.0)
+        QTimer.singleShot(150, self.perform_capture)
+
+    def perform_capture(self):
+        try:
+            import pyscreenshot as ImageGrab
+        except ImportError as exc:
+            self.restore_window_visibility()
+            self.set_capture_loop_paused(True, "Capture loop paused because pyscreenshot is missing.")
+            self.capture_in_progress = False
+            self.show_error_message(str(exc))
+            return
+
+        try:
+            image = ImageGrab.grab()
+            image.thumbnail((1000, 700))
+        except Exception as exc:
+            self.restore_window_visibility()
+            self.set_capture_loop_paused(True, "Capture loop paused because the screen capture failed.")
+            self.capture_in_progress = False
+            self.show_error_message(str(exc))
+            return
+
+        self.restore_window_visibility()
+
+        self.current_capture_path = self.save_capture_to_tempfile(image)
+        self.status_label.setText("Writing description...")
+        self.update_compact_label()
+        self.start_description_worker()
+
+    def restore_window_visibility(self):
+        self.setWindowOpacity(1.0)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def save_capture_to_tempfile(self, image):
+        capture_name = f"screenshot_llm_{uuid.uuid4().hex}.png"
+        capture_path = os.path.join(tempfile.gettempdir(), capture_name)
+        image.save(capture_path, "PNG")
+        return capture_path
+
+    def start_description_worker(self):
+        self.load_config()
+        model_id = (self.LLM_MODEL_ID or "").strip()
+        if not model_id:
+            self.set_capture_loop_paused(True, "Capture loop paused because the model ID is missing.")
+            self.capture_in_progress = False
+            self.show_error_message("Model ID is required.")
+            return
+
         if self.OLLAMA == "1":
-            print("Using Ollama")
-            generator = Worker_Local(self.memory, self.LLM_API_MODEL, self.LLM_MODEL_ID)
-            generator.finished.connect(self.finished)
-            generator.error.connect(self.show_error_message)
-            generator.start()
-            self.worker_reference = generator  
+            worker = Worker_Local(self.current_capture_path, self.LLM_API_MODEL, model_id, CAPTURE_PROMPT)
         else:
-            print("Using Litellm")
-            response = Worker_litellm(self.memory, self.LLM_API_MODEL, self.LLM_MODEL_ID)
-            response.finished.connect(self.finished)
-            response.error.connect(self.show_error_message)
-            response.start()
-            self.worker_response = response
+            worker = Worker_litellm(self.current_capture_path, self.LLM_API_MODEL, model_id, CAPTURE_PROMPT)
 
+        worker.finished.connect(self.handle_description_finished)
+        worker.error.connect(self.handle_description_error)
+        worker.start()
+        self.current_worker = worker
 
-    def finished(self, response):
-        self.loading_timer.stop()
-        self.memory.append({'role': AI_ROLE, 'content': response})
-        self.loading_label.setText("")
-        self.update_conversation(response, AI_ROLE)
+    def handle_description_finished(self, description):
+        self.latest_description = description.strip()
+        self.description_text.setPlainText(self.latest_description)
+        self.status_label.setText(
+            f"Last updated {datetime.now().strftime('%H:%M:%S')} | every {self.CAPTURE_INTERVAL_SECONDS} seconds"
+        )
+        self.update_compact_label()
+        self.finish_capture_cycle()
+
+    def handle_description_error(self, error):
+        self.set_capture_loop_paused(True, "Capture loop paused because description generation failed.")
+        self.show_error_message(error)
+        self.finish_capture_cycle()
+
+    def finish_capture_cycle(self):
+        if self.current_capture_path and os.path.exists(self.current_capture_path):
+            try:
+                os.remove(self.current_capture_path)
+            except OSError:
+                pass
+
+        self.current_capture_path = None
+        self.current_worker = None
+        self.capture_in_progress = False
+
+        if not self.capture_paused and not self.capture_timer.isActive():
+            self.capture_timer.start()
+        self.update_compact_label()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_compact_mode()
+
+    def update_compact_mode(self):
+        if not hasattr(self, "tab_widget") or not hasattr(self, "compact_label"):
+            return
+
+        compact = self.width() <= COMPACT_WINDOW_WIDTH or self.height() <= COMPACT_WINDOW_HEIGHT
+        if compact == getattr(self, "compact_mode", False):
+            return
+
+        self.compact_mode = compact
+        self.tab_widget.setVisible(not compact)
+        self.compact_label.setVisible(compact)
+
+        if compact:
+            self.verticalLayout.setContentsMargins(6, 6, 6, 6)
+            self.verticalLayout.setSpacing(0)
+        else:
+            self.verticalLayout.setContentsMargins(20, 20, 20, 20)
+            self.verticalLayout.setSpacing(20)
+
+        self.update_compact_label()
+
+    def update_compact_label(self):
+        if not hasattr(self, "compact_label"):
+            return
+
+        summary = getattr(self, "latest_description", "").strip()
+        self.compact_label.setText(summary or "Waiting for summary.")
 
     def show_message(self, message):
-        message_box = QMessageBox()
+        message_box = QMessageBox(self)
         message_box.setWindowTitle("Message")
         message_box.setIcon(QMessageBox.Icon.NoIcon)
-        message_box.setWindowModality(Qt.WindowModality.ApplicationModal)
         message_box.setText(message)
         message_box.exec()
-    
+
     def show_error_message(self, error):
-        self.loading_timer.stop()
-        error_message = QMessageBox()
-        red_color = "<font color='red'> {}</font>".format(error)
+        error_message = QMessageBox(self)
         error_message.setIcon(QMessageBox.Icon.Critical)
         error_message.setWindowTitle("Error")
-        error_message.setWindowModality(Qt.WindowModality.ApplicationModal)
-        error_message.setText("Error occurred. Please try again. Error: " + red_color)
+        error_message.setText(f"Error occurred. Please try again. Error: {error}")
         error_message.exec()
 
-    def update_conversation(self, text, role):
-        markdown_text = markdown.markdown(text) if role == AI_ROLE else text
-        user_color = 'white' if self.dark_mode else 'green'
-        ai_color = 'white' if self.dark_mode else 'blue'
-
-        if role == USER_ROLE:
-            self.conversation.append(f"😊 : <font color='{user_color}'>{text}</font>")
-        else:
-            self.conversation.append(f"🤖 : <font color='{ai_color}'>{markdown_text}</font>")
-
-        self.conversation.ensureCursorVisible()
-
-    def image_to_base64(self):
-        with open(self.image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
-
     def closeEvent(self, event):
-        event.ignore()
-        self.hide()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
-
-    def setup_loading_animation(self):
-        self.loading_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self.current_frame = 0
-        self.loading_timer = QTimer(self)
-        self.loading_timer.timeout.connect(self.update_loading_animation)
-        self.loading_timer.setInterval(100)  # Update every 100ms
-
-    def update_loading_animation(self):
-        self.loading_label.setText(f"Loading {self.loading_frames[self.current_frame]}")
-        self.current_frame = (self.current_frame + 1) % len(self.loading_frames)
+        event.accept()
