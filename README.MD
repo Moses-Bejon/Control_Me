@@ -9,6 +9,7 @@ Screenshot LLM is a Python application that captures the screen on a configurabl
 * **Configurable AI Models:** Supports multiple AI models via configurable API keys and model IDs.
 * **Flexible Configuration:** Manage settings, including API keys and model selection, through a dedicated settings tab.
 * **Local Model Support:** Optionally analyze screenshots using a local Ollama model.
+* **Hourly Activity Memory:** Saves each screenshot description into the current clock hour, then stores an AI-written hourly summary in SQLite.
 
 
 ## Getting Started
@@ -74,6 +75,7 @@ This builds and installs the package. The **Control Me** desktop entry launches 
    LLM_MODEL_ID=gemini/gemini-3.1.flash-lite  # Default model ID
    CAPTURE_INTERVAL_SECONDS=60  # How often to capture the screen
    OLLAMA=0  # Set to 1 to enable local Ollama inference
+   ACTIVITY_DATA_DIRECTORY=~/.screenshot_llm/activity  # Optional location for activity text files and SQLite database
    ```
 
 3. **Run the Application:**
@@ -97,6 +99,11 @@ The application uses a `.env` file to store configuration details.  Essential se
 *   `LLM_MODEL_ID`: The model ID to use. Defaults to `gemini/gemini-3.1.flash-lite`.
 *   `CAPTURE_INTERVAL_SECONDS`: How often to capture the screen. Defaults to `60`.
 *   `OLLAMA`: Set to `1` to enable local LLM inference using Ollama. Requires Ollama to be running and configured.
+*   `ACTIVITY_DATA_DIRECTORY`: Where hourly text files and `activity_memory.db` are stored. Defaults to `~/.screenshot_llm/activity`.
+
+## Activity Memory
+
+Each screenshot description is appended to a text file for its current clock hour. At the next `HH:00`, the application asks the configured model for a single natural-language summary and stores it in SQLite. The `hourly_summaries` table contains `date`, `hour_start`, `hour_end`, and `summary`; its activity window begins one capture interval before the earliest observation and ends one interval after the latest observation, without extending beyond that clock hour. Previous days are retained.
 
 ## Environment Variable Overrides
 

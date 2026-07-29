@@ -1,7 +1,7 @@
 import os
 import tempfile
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import dotenv
 from PyQt6.QtCore import QTimer, Qt
@@ -10,10 +10,13 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox
 from .interface import Ui_MainWindow
 from .litellm_generate import Worker_litellm
 from .local_generate import Worker_Local
+from .activity_memory import ActivityMemory
+from .text_generate import TextSummaryWorker
 
 SCRLLM_ENV_FILE = os.getenv("SCRLLM_ENV_FILE", ".env")
 DEFAULT_MODEL_ID = "gemini/gemini-3.1.flash-lite"
 DEFAULT_CAPTURE_INTERVAL_SECONDS = 60
+DEFAULT_ACTIVITY_DATA_DIRECTORY = "~/.screenshot_llm/activity"
 COMPACT_WINDOW_WIDTH = 360
 COMPACT_WINDOW_HEIGHT = 170
 CAPTURE_PROMPT = (
@@ -24,6 +27,12 @@ CAPTURE_PROMPT = (
     "Unproductive behaviour: Youtube football highlights\n"
     "Unproductive behaviour: Instagram\n"
     "Use only the most relevant key points. Do not add explanations, bullets, numbering, or extra text."
+)
+HOURLY_SUMMARY_PROMPT = (
+    "Write one concise, natural-language summary of this hour's activity observations. "
+    "Describe what the person mainly did and mention meaningful switching or distractions. "
+    "Do not mention screenshots, observations, timestamps, productivity labels, or uncertainty. "
+    "Return only the summary sentence, with no heading, bullets, or extra commentary."
 )
 
 
@@ -37,11 +46,18 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.capture_paused = False
         self.current_capture_path = None
         self.current_worker = None
+        self.summary_workers = []
+        self.pending_summary_hours = []
+        self.queued_summary_hours = set()
+        self.active_hour = self.current_hour()
 
         self.load_config()
+        self.activity_memory = ActivityMemory(self.ACTIVITY_DATA_DIRECTORY)
         self.apply_config_to_controls()
         self.setup_runtime_ui()
         self.setup_capture_timer()
+        self.setup_hourly_summary_timer()
+        self.reconcile_completed_hours()
 
         QTimer.singleShot(250, self.capture_and_describe)
 
@@ -53,6 +69,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.OLLAMA = os.getenv("OLLAMA") or "0"
         self.DARK_MODE = os.getenv("DARK_MODE") or "0"
         self.ICON_SCHEME = os.getenv("ICON_SCHEME") or "default"
+        self.ACTIVITY_DATA_DIRECTORY = os.getenv("ACTIVITY_DATA_DIRECTORY") or DEFAULT_ACTIVITY_DATA_DIRECTORY
 
     def parse_capture_interval(self, value):
         try:
@@ -91,6 +108,100 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.pause_button.setText("⏸ Pause")
         self.update_compact_label()
 
+    def setup_hourly_summary_timer(self):
+        self.hourly_summary_timer = QTimer(self)
+        self.hourly_summary_timer.setSingleShot(True)
+        self.hourly_summary_timer.timeout.connect(self.rollover_hour)
+        self.schedule_next_hour_rollover()
+
+    @staticmethod
+    def current_hour(now=None):
+        return (now or datetime.now()).replace(minute=0, second=0, microsecond=0)
+
+    def schedule_next_hour_rollover(self):
+        now = datetime.now()
+        next_hour = (now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
+        milliseconds = max(1, int((next_hour - now).total_seconds() * 1000))
+        self.hourly_summary_timer.start(milliseconds)
+
+    def rollover_hour(self):
+        completed_hour = self.active_hour
+        self.active_hour = self.current_hour()
+        if completed_hour < self.active_hour:
+            self.queue_hourly_summary(completed_hour)
+        self.reconcile_completed_hours()
+        self.schedule_next_hour_rollover()
+
+    def reconcile_completed_hours(self):
+        """Queue every recorded hour that ended while the app was not running."""
+        for completed_hour in self.activity_memory.completed_unsummarized_hours(self.active_hour):
+            self.queue_hourly_summary(completed_hour)
+
+    def queue_hourly_summary(self, completed_hour):
+        completed_hour = completed_hour.replace(minute=0, second=0, microsecond=0)
+        if (
+            completed_hour in self.queued_summary_hours
+            or self.activity_memory.has_summary(completed_hour)
+        ):
+            return
+
+        self.queued_summary_hours.add(completed_hour)
+        self.pending_summary_hours.append(completed_hour)
+        self.start_next_hourly_summary()
+
+    def start_next_hourly_summary(self):
+        if self.summary_workers or not self.pending_summary_hours:
+            return
+
+        completed_hour = self.pending_summary_hours.pop(0)
+        observations = self.activity_memory.read_hour(completed_hour)
+        if not observations:
+            self.queued_summary_hours.discard(completed_hour)
+            self.start_next_hourly_summary()
+            return
+
+        self.start_hourly_summary_worker(completed_hour, observations)
+
+    def start_hourly_summary_worker(self, completed_hour, observations):
+        self.load_config()
+        capture_interval_seconds = self.CAPTURE_INTERVAL_SECONDS
+        worker = TextSummaryWorker(
+            observations,
+            self.LLM_API_MODEL,
+            self.LLM_MODEL_ID,
+            self.OLLAMA == "1",
+            HOURLY_SUMMARY_PROMPT,
+        )
+        worker.finished.connect(
+            lambda summary, hour=completed_hour, source_observations=observations,
+            interval=capture_interval_seconds, active_worker=worker: self.save_hourly_summary(
+                hour, summary, source_observations, interval, active_worker
+            )
+        )
+        worker.error.connect(
+            lambda error, hour=completed_hour, active_worker=worker: self.handle_hourly_summary_error(
+                hour, error, active_worker
+            )
+        )
+        self.summary_workers.append(worker)
+        worker.start()
+
+    def save_hourly_summary(self, completed_hour, summary, observations, capture_interval_seconds, worker):
+        self.activity_memory.save_summary(
+            completed_hour, summary, observations, capture_interval_seconds
+        )
+        if worker in self.summary_workers:
+            self.summary_workers.remove(worker)
+        self.queued_summary_hours.discard(completed_hour)
+        self.start_next_hourly_summary()
+
+    def handle_hourly_summary_error(self, completed_hour, error, worker):
+        print(f"Unable to summarise {completed_hour:%Y-%m-%d %H:00}: {error}")
+        if worker in self.summary_workers:
+            self.summary_workers.remove(worker)
+        self.queued_summary_hours.discard(completed_hour)
+        self.start_next_hourly_summary()
+
     def set_capture_loop_paused(self, paused, message=None):
         self.capture_paused = paused
         if paused:
@@ -123,7 +234,8 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
             env_file.write(f"CAPTURE_INTERVAL_SECONDS={capture_interval_seconds}\n")
             env_file.write(f"OLLAMA={'1' if self.ollama_checkbox.isChecked() else '0'}\n")
             env_file.write(f"DARK_MODE={'1' if self.dark_mode_checkbox.isChecked() else '0'}\n")
-            env_file.write(f"ICON_SCHEME={icon_scheme}")
+            env_file.write(f"ICON_SCHEME={icon_scheme}\n")
+            env_file.write(f"ACTIVITY_DATA_DIRECTORY={self.ACTIVITY_DATA_DIRECTORY}\n")
 
         self.load_config()
         self.apply_config_to_controls()
@@ -138,7 +250,8 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
             env_file.write(f"CAPTURE_INTERVAL_SECONDS={DEFAULT_CAPTURE_INTERVAL_SECONDS}\n")
             env_file.write("OLLAMA=0\n")
             env_file.write("DARK_MODE=0\n")
-            env_file.write("ICON_SCHEME=default")
+            env_file.write("ICON_SCHEME=default\n")
+            env_file.write(f"ACTIVITY_DATA_DIRECTORY={DEFAULT_ACTIVITY_DATA_DIRECTORY}\n")
 
         self.load_config()
         self.apply_config_to_controls()
@@ -225,6 +338,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
 
     def handle_description_finished(self, description):
         self.latest_description = description.strip()
+        self.activity_memory.append_observation(datetime.now(), self.latest_description)
         self.description_text.setPlainText(self.latest_description)
         self.status_label.setText(
             f"Last updated {datetime.now().strftime('%H:%M:%S')} | every {self.CAPTURE_INTERVAL_SECONDS} seconds"
