@@ -80,6 +80,35 @@ class ActivityMemory:
 
         return sorted(completed_hours)
 
+    def summaries_for_date(self, date, exclude_hour=None):
+        """Return stored summaries for ``date``, ordered by their activity window."""
+        excluded_start = None
+        excluded_end = None
+        if exclude_hour is not None:
+            excluded_start = exclude_hour.replace(minute=0, second=0, microsecond=0)
+            excluded_end = excluded_start + timedelta(hours=1)
+
+        with sqlite3.connect(self.database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT hour_start, hour_end, summary
+                FROM hourly_summaries
+                WHERE date = ?
+                ORDER BY hour_start
+                """,
+                (date.isoformat(),),
+            ).fetchall()
+
+        summaries = []
+        for hour_start, hour_end, summary in rows:
+            if (
+                excluded_start is not None
+                and excluded_start.strftime("%H:%M:%S") <= hour_start < excluded_end.strftime("%H:%M:%S")
+            ):
+                continue
+            summaries.append((hour_start, hour_end, summary))
+        return summaries
+
     def summary_window(self, hour, observations, capture_interval_seconds):
         """Return the recorded activity window, constrained to ``hour``."""
         hour_start = hour.replace(minute=0, second=0, microsecond=0)

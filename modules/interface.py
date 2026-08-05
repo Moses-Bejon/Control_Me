@@ -103,22 +103,23 @@ class Ui_MainWindow(object):
         self.tab1_layout.setObjectName("tab1_layout")
         self.tab1_layout.setSpacing(15)
 
-        self.description_text = self.create_text_edit(font)
-        self.description_text.setObjectName("description_text")
-        self.description_text.setMinimumSize(0, 0)
-        self.description_text.setPlaceholderText("A description of the current screen will appear here.")
-        self.tab1_layout.addWidget(self.description_text, stretch=1)
+        self.conversation_text = self.create_text_edit(font)
+        self.conversation_text.setObjectName("conversation_text")
+        self.conversation_text.setReadOnly(True)
+        self.conversation_text.setMinimumSize(0, 0)
+        self.conversation_text.setPlaceholderText("Ask about your day, work, or activity.")
+        self.tab1_layout.addWidget(self.conversation_text, stretch=1)
 
-        self.status_label = self.create_label("Waiting to capture the first screenshot.")
-        self.status_label.setObjectName("status_label")
-        self.status_label.setFont(font)
-        self.status_label.setMinimumSize(0, 0)
-        self.tab1_layout.addWidget(self.status_label)
-
-        self.pause_button = self.create_button("⏸ Pause", font)
-        self.pause_button.setObjectName("pause_button")
-        self.pause_button.setMinimumSize(0, 0)
-        self.tab1_layout.addWidget(self.pause_button)
+        message_layout = QtWidgets.QHBoxLayout()
+        message_layout.setSpacing(10)
+        self.message_input = self.create_line_edit(font)
+        self.message_input.setObjectName("message_input")
+        self.message_input.setPlaceholderText("Send a message...")
+        message_layout.addWidget(self.message_input, stretch=1)
+        self.send_button = self.create_button("Send", font)
+        self.send_button.setObjectName("send_button")
+        message_layout.addWidget(self.send_button)
+        self.tab1_layout.addLayout(message_layout)
 
     def setup_settings_tab(self, font):
         self.tab2 = QtWidgets.QScrollArea()
@@ -182,6 +183,15 @@ class Ui_MainWindow(object):
         self.dark_mode_checkbox.setChecked(self.dark_mode)  # Set initial state
         self.dark_mode_checkbox.stateChanged.connect(self.toggle_dark_mode)
         self.tab2_layout.addWidget(self.dark_mode_checkbox)
+
+        self.status_label = self.create_label("Waiting to capture the first screenshot.")
+        self.status_label.setObjectName("status_label")
+        self.status_label.setFont(font)
+        self.tab2_layout.addWidget(self.status_label)
+
+        self.pause_button = self.create_button("⏸ Pause", font)
+        self.pause_button.setObjectName("pause_button")
+        self.tab2_layout.addWidget(self.pause_button)
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.setSpacing(10)

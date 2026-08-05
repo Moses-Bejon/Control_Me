@@ -50,6 +50,21 @@ class ActivityMemoryTests(unittest.TestCase):
 
             self.assertTrue(memory.has_summary(final_hour))
 
+    def test_summaries_for_date_returns_each_saved_summary_in_time_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            memory = ActivityMemory(directory)
+            first_hour = datetime(2026, 7, 30, 9)
+            second_hour = datetime(2026, 7, 30, 10)
+
+            for hour, summary in ((second_hour, "Second."), (first_hour, "First.")):
+                memory.append_observation(hour.replace(minute=30), summary)
+                memory.save_summary(hour, summary, memory.read_hour(hour), 60)
+
+            self.assertEqual(
+                [summary for _, _, summary in memory.summaries_for_date(first_hour.date())],
+                ["First.", "Second."],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

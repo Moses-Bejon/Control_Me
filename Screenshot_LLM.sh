@@ -106,7 +106,6 @@ fi
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
     if [ $? -eq 0 ]; then
         echo "Python script started successfully. Check 'output.log' for output."
-        read -p "Press [Enter] to exit..."
     else
         echo "Failed to start the Python script."
         pause_script
