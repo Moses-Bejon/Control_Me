@@ -3,5 +3,6 @@ __pycache__
 build/
 venv/
 output.log
+prompts.log
 tsx/
 control_me/

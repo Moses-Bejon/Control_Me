@@ -69,8 +69,11 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.pending_summary_hours = []
         self.queued_summary_hours = set()
         self.active_hour = self.current_hour()
-
+        
         self.load_config()
+        venvpath = os.getenv("VENVPATH", os.path.expanduser("~/.control_me/"))
+        self.prompts_log_path = os.path.join(venvpath, "prompts.log")
+        
         self.activity_memory = ActivityMemory(self.ACTIVITY_DATA_DIRECTORY)
         self.apply_config_to_controls()
         self.setup_runtime_ui()
@@ -89,6 +92,14 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.DARK_MODE = os.getenv("DARK_MODE") or "0"
         self.ICON_SCHEME = os.getenv("ICON_SCHEME") or "default"
         self.ACTIVITY_DATA_DIRECTORY = os.getenv("ACTIVITY_DATA_DIRECTORY") or DEFAULT_ACTIVITY_DATA_DIRECTORY
+
+    def log_prompt_response(self, speaker, message):
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(self.prompts_log_path, "a") as log_file:
+                log_file.write(f"[{timestamp}] {speaker}: {message}\n")
+        except Exception as e:
+            print(f"Failed to log prompt/response: {e}")
 
     def parse_capture_interval(self, value):
         try:
@@ -126,6 +137,32 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.message_input.clear()
         self.conversation.append({"role": "user", "content": message})
         self.append_chat_message("You", message)
+        
+        # Log system prompt and context
+        self.log_prompt_response("System", CHAT_SYSTEM_PROMPT)
+        
+        # Log activity context
+        current_observations = self.activity_memory.read_hour(self.active_hour) or "No activity recorded yet."
+        summaries = self.activity_memory.summaries_for_date(
+            self.active_hour.date(), exclude_hour=self.active_hour
+        )
+        if summaries:
+            summary_context = "\n".join(
+                f"{hour_start}–{hour_end}: {summary}"
+                for hour_start, hour_end, summary in summaries
+            )
+        else:
+            summary_context = "No completed-hour summaries have been collected today."
+        
+        context = (
+            "Activity context for this reply:\n"
+            f"Current hour ({self.active_hour:%Y-%m-%d %H}:00) observations:\n{current_observations}\n\n"
+            f"Other hourly summaries collected today:\n{summary_context}"
+        )
+        self.log_prompt_response("Context", context)
+        
+        # Log user message
+        self.log_prompt_response("User", message)
         self.load_config()
 
         worker = ConversationWorker(
@@ -169,12 +206,14 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         reply = reply.strip()
         self.conversation.append({"role": "assistant", "content": reply})
         self.append_chat_message("ControlMe", reply)
+        self.log_prompt_response("ControlMe", reply)
         self.finish_chat(worker)
 
     def handle_chat_error(self, error, worker):
         reply = f"I couldn't generate a reply: {error}"
         self.conversation.append({"role": "assistant", "content": reply})
         self.append_chat_message("ControlMe", reply)
+        self.log_prompt_response("ControlMe", reply)
         self.finish_chat(worker)
 
     def finish_chat(self, worker):
