@@ -34,7 +34,11 @@ CAPTURE_PROMPT = (
     "Unproductive behaviour: Gaming (side note, even if it's a logic game it's still unproductive)\n"
     "Neutral behaviour: Listening to music\n"
     "Neutral behaviour: Route planning\n"
-    "Use only the most relevant key points. Do not add explanations, bullets, numbering, or extra text."
+    "Use only the most relevant key points. Do not add explanations, bullets, numbering, or extra text.\n"
+    "Use the name of the window to inform what it is (if there).\n"
+    "For example, if the name of the window is ControlMe, then that is not discord, or some other messaging service.\n"
+    "That should be classified as: 'Productive behaviour: ControlMe productivity coach' \n"
+    "(ControlMe is the app that you are a cog in)\n"
 )
 HOURLY_SUMMARY_PROMPT = (
     "Write one concise summary of this hour's activity observations. "
