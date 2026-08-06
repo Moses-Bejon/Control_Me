@@ -296,9 +296,6 @@ class Ui_MainWindow(object):
                 border-radius: 8px;
                 padding: 12px
             }
-            QComboBox::down-arrow {
-                display: none;
-            }
         """
 
     def get_dark_stylesheet(self):
@@ -367,9 +364,6 @@ class Ui_MainWindow(object):
                 border: none;
                 border-radius: 8px;
                 padding: 12px
-            }
-            QComboBox::down-arrow {
-                display: none;
             }
         """
 
