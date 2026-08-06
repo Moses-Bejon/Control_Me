@@ -16,7 +16,7 @@ from .text_generate import ConversationWorker, TextSummaryWorker
 SCRLLM_ENV_FILE = os.getenv("SCRLLM_ENV_FILE", ".env")
 DEFAULT_MODEL_ID = "gemini/gemini-3.1.flash-lite"
 DEFAULT_CAPTURE_INTERVAL_SECONDS = 60
-DEFAULT_ACTIVITY_DATA_DIRECTORY = "~/.screenshot_llm/activity"
+DEFAULT_ACTIVITY_DATA_DIRECTORY = "~/.control_me/activity"
 COMPACT_WINDOW_WIDTH = 360
 COMPACT_WINDOW_HEIGHT = 170
 CAPTURE_PROMPT = (
@@ -386,7 +386,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.setWindowOpacity(1.0)
 
     def save_capture_to_tempfile(self, image):
-        capture_name = f"screenshot_llm_{uuid.uuid4().hex}.png"
+        capture_name = f"control_me_{uuid.uuid4().hex}.png"
         capture_path = os.path.join(tempfile.gettempdir(), capture_name)
         image.save(capture_path, "PNG")
         return capture_path

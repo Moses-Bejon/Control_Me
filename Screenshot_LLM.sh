@@ -1,11 +1,11 @@
 #!/bin/bash
 i=
 # Define the lock file path
-LOCKFILE="/tmp/screenshot_llm.lock"
+LOCKFILE="/tmp/control_me.lock"
 
 # Define the virtual environment path
 # Embed trailing slash to retain relative path capability
-VENVPATH="${VENVPATH:-$HOME/.screenshot_llm/}"
+VENVPATH="${VENVPATH:-$HOME/.control_me/}"
 
 # This makes it easy to run in basic environments like Git Bash for Windows
 check_running() {
@@ -87,7 +87,7 @@ fi
 
 # Check if the Python script is already running
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    if check_running "main.py --screenshot_llm"; then
+    if check_running "main.py --control_me"; then
         echo "Python script is already running. Exiting."
         rm "$LOCKFILE"
         exit 1
@@ -97,9 +97,9 @@ fi
 # Run the main Python script in the background with nohup when run without systemd
 # Send a bogus argument to match on to avoid conflicts managing the process
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    nohup python -u main.py --screenshot_llm > ${VENVPATH}/output.log 2>&1 &
+    nohup python -u main.py --control_me > ${VENVPATH}/output.log 2>&1 &
 else
-    python3 -u main.py --screenshot_llm
+    python3 -u main.py --control_me
 fi
 
 # Check if the script was started successfully when run without systemd

@@ -403,13 +403,13 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Screenshot LLM"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Control Me"))
 
 if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("Screenshot LLM")
-    app.setDesktopFileName("Screenshot_LLM")
+    app.setApplicationName("Control Me")
+    app.setDesktopFileName("Control_Me")
     app.setWindowIcon(QtGui.QIcon("icon.ico"))
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()

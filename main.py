@@ -8,8 +8,8 @@ from modules.ui import ScreenshotAnalyzer
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Screenshot LLM")
-    app.setDesktopFileName("Screenshot_LLM")
+    app.setApplicationName("Control Me")
+    app.setDesktopFileName("Control_Me")
     app.setWindowIcon(QIcon("icon.ico"))
 
     window = ScreenshotAnalyzer()

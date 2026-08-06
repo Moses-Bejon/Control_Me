@@ -1,6 +1,6 @@
 [Unit]
-Description=Screenshot LLM: AI-Powered Screenshot Analysis
-Documentation=https://github.com/ThanabordeeN/Screenshot_LLM
+Description=Control Me: For controlling bad habits and distractions
+Documentation=https://github.com/Moses-Bejon/Control_Me
 Wants=network-online.target
 After=network-online.target
 
@@ -30,9 +30,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET
 RestrictNetworkInterfaces=lo
 SecureBits=noroot-locked
 # Workaround to ensure paths exist
-ExecCondition=+/usr/bin/mkdir -p %h/.screenshot_llm
+ExecCondition=+/usr/bin/mkdir -p %h/.control_me
 ExecCondition=+/usr/bin/mkdir -p %h/.cache/pip
-ReadWritePaths=%h/.screenshot_llm
+ReadWritePaths=%h/.control_me
 ReadWritePaths=%h/.cache/pip
 
 Environment=SCRLLM_SYSTEMD_UNIT=%n
@@ -45,10 +45,10 @@ Environment=SCRLLM_SYSTEMD_UNIT=%n
 # Screenshots path
 Environment=SCREENSHOT_DIRECTORY=%h/Pictures/Screenshots
 # .env location
-Environment=SCRLLM_ENV_FILE=%h/.screenshot_llm/env
+Environment=SCRLLM_ENV_FILE=%h/.control_me/env
 
-WorkingDirectory=/usr/lib/Screenshot_LLM
-ExecStart=/usr/bin/bash Screenshot_LLM.sh
+WorkingDirectory=/usr/lib/Control_Me
+ExecStart=/usr/bin/bash Control_Me.sh
 Type=simple
 Restart=on-failure
 
