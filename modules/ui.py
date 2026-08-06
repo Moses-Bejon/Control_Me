@@ -4,8 +4,12 @@ import uuid
 from datetime import datetime, timedelta
 
 import dotenv
+import markdown
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QMessageBox, QFrame, QLabel, QVBoxLayout, QScrollArea
+)
 
 from .interface import Ui_MainWindow
 from .litellm_generate import Worker_litellm
@@ -53,6 +57,44 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 
+class ChatMessageWidget(QFrame):
+    def __init__(self, message, is_user):
+        super().__init__()
+        self.is_user = is_user
+        
+        # Create layout and label
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(0)
+        
+        # Convert markdown to HTML
+        html_content = markdown.markdown(message, extensions=['nl2br', 'extra'])
+        
+        label = QLabel(html_content)
+        label.setWordWrap(True)
+        
+        # Set alignment based on message type
+        if is_user:
+            label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        else:
+            label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        
+        layout.addWidget(label)
+        self.setLayout(layout)
+        
+        # Apply palette-based coloring (respects app theme)
+        self._apply_palette(is_user)
+    
+    def _apply_palette(self, is_user):
+        palette = self.palette()
+        if is_user:
+            palette.setColor(QPalette.ColorRole.Window, QColor("#E3F2FD"))
+        else:
+            palette.setColor(QPalette.ColorRole.Window, QColor("#F5F5F5"))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
+
+
 class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
@@ -74,6 +116,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         venvpath = os.getenv("VENVPATH", os.path.expanduser("~/.control_me/"))
         self.prompts_log_path = os.path.join(venvpath, "prompts.log")
         
+        # Replace QTextEdit with scrollable message container
+        self._setup_chat_container()
+        
         self.activity_memory = ActivityMemory(self.ACTIVITY_DATA_DIRECTORY)
         self.apply_config_to_controls()
         self.setup_runtime_ui()
@@ -82,6 +127,35 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.reconcile_completed_hours()
 
         QTimer.singleShot(250, self.capture_and_describe)
+    
+    def _setup_chat_container(self):
+        from PyQt6.QtWidgets import QScrollArea
+        
+        # Find and remove the old conversation_text widget
+        layout = self.tab1_layout
+        layout.removeWidget(self.conversation_text)
+        self.conversation_text.deleteLater()
+        
+        # Create scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
+        
+        # Create container widget and layout for messages
+        container = QFrame()
+        container_layout = QVBoxLayout()
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(10)
+        container_layout.addStretch()
+        container.setLayout(container_layout)
+        
+        scroll_area.setWidget(container)
+        layout.addWidget(scroll_area, stretch=1)
+        
+        # Store references
+        self.conversation_text = scroll_area
+        self.chat_messages_container = container
+        self.chat_messages_layout = container_layout
 
     def load_config(self):
         dotenv.load_dotenv(SCRLLM_ENV_FILE, override=True)
@@ -224,7 +298,16 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.message_input.setFocus()
 
     def append_chat_message(self, speaker, message):
-        self.conversation_text.append(f"{speaker}: {message}")
+        is_user = speaker == "You"
+        msg_widget = ChatMessageWidget(message, is_user)
+        
+        # Insert before the stretch at the end
+        self.chat_messages_layout.insertWidget(
+            self.chat_messages_layout.count() - 1,
+            msg_widget
+        )
+        
+        # Scroll to bottom
         scrollbar = self.conversation_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
