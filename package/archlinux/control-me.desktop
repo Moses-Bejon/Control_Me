@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Control Me
+Comment=Personal productivity application
+Exec=control-me
+Icon=control-me
+Type=Application
+Categories=Qt;Utility;ArtificialIntelligence;
+Terminal=false

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+if [ -z "${SCRLLM_ENV_FILE:-}" ]; then
+  SCRLLM_ENV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/control-me/env"
+  export SCRLLM_ENV_FILE
+fi
+
+mkdir -p "$(dirname "${SCRLLM_ENV_FILE}")"
+exec /usr/bin/python /usr/lib/control-me/main.py "$@"

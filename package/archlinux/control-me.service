@@ -1,0 +1,13 @@
+[Unit]
+Description=Control Me personal productivity application
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=SCRLLM_SYSTEMD_UNIT=%n
+ExecStart=/usr/bin/control-me
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

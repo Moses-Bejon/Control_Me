@@ -1,0 +1,19 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Categories=Qt;Utility;ArtificialIntelligence;
+Comment[en_US]=For controlling bad habits and distractions
+Comment=For controlling bad habits and distractions
+Exec=/usr/bin/systemctl --user start control-me
+GenericName[en_US]=Bad habit controller
+GenericName=Bad habit controller
+Icon=/usr/lib/Control_Me/icon.ico
+Name[en_US]=Control_Me
+Name=Control_Me
+Path=/usr/lib/Control_Me
+StartupWMClass=Control_Me
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-KDE-SubstituteUID=false
+X-KDE-Username=
