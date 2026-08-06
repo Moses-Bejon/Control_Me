@@ -120,6 +120,13 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         venvpath = os.getenv("VENVPATH", os.path.expanduser("~/.control_me/"))
         self.prompts_log_path = os.path.join(venvpath, "prompts.log")
         
+        # Clear prompts.log at the start of a new session
+        try:
+            with open(self.prompts_log_path, "w") as log_file:
+                pass  # Opening in write mode clears the file
+        except Exception as e:
+            print(f"Failed to clear prompts.log: {e}")
+        
         # Replace QTextEdit with scrollable message container
         self._setup_chat_container()
         
@@ -175,7 +182,10 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(self.prompts_log_path, "a") as log_file:
-                log_file.write(f"[{timestamp}] {speaker}: {message}\n")
+                if speaker == "User":
+                    # Add separator before user messages
+                    log_file.write("\n" + "=" * 80 + "\n")
+                log_file.write(f"[{timestamp}] {speaker}:\n{message}\n")
         except Exception as e:
             print(f"Failed to log prompt/response: {e}")
 
@@ -215,33 +225,10 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.message_input.clear()
         self.conversation.append({"role": "user", "content": message})
         self.append_chat_message("You", message)
-        
-        # Log system prompt and context
-        self.log_prompt_response("System", CHAT_SYSTEM_PROMPT)
-        
-        # Log activity context
-        current_observations = self.activity_memory.read_hour(self.active_hour) or "No activity recorded yet."
-        summaries = self.activity_memory.summaries_for_date(
-            self.active_hour.date(), exclude_hour=self.active_hour
-        )
-        if summaries:
-            summary_context = "\n".join(
-                f"{hour_start}–{hour_end}: {summary}"
-                for hour_start, hour_end, summary in summaries
-            )
-        else:
-            summary_context = "No completed-hour summaries have been collected today."
-        
-        context = (
-            "Activity context for this reply:\n"
-            f"Current hour ({self.active_hour:%Y-%m-%d %H}:00) observations:\n{current_observations}\n\n"
-            f"Other hourly summaries collected today:\n{summary_context}"
-        )
-        self.log_prompt_response("Context", context)
-        
-        # Log user message
-        self.log_prompt_response("User", message)
+
         self.load_config()
+
+        self.log_prompt_response(speaker="System", message = self.chat_messages_with_context())
 
         worker = ConversationWorker(
             self.chat_messages_with_context(),
