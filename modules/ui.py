@@ -291,6 +291,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
 
     def setup_runtime_ui(self):
         self.latest_description = ""
+        self.saved_config_values = self.config_control_values()
+        self.has_unsaved_config_changes = False
+        self.setup_unsaved_changes_warning()
         self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
         self.setWindowTitle("ControlMe")
         self.pause_button.clicked.connect(self.toggle_capture_loop)
@@ -299,8 +302,51 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.save_button.clicked.connect(self.save_config)
         self.reset_config.clicked.connect(self.reset_configurations)
         self.capture_interval_input.returnPressed.connect(self.save_config)
+        self.api_key_input.textChanged.connect(self.update_unsaved_changes_warning)
+        self.model_id_input.textChanged.connect(self.update_unsaved_changes_warning)
+        self.capture_interval_input.textChanged.connect(self.update_unsaved_changes_warning)
+        self.icon_scheme_combobox.currentTextChanged.connect(self.update_unsaved_changes_warning)
+        self.ollama_checkbox.toggled.connect(self.update_unsaved_changes_warning)
+        self.dark_mode_checkbox.toggled.connect(self.update_unsaved_changes_warning)
         self.update_compact_label()
         self.update_compact_mode()
+
+    def setup_unsaved_changes_warning(self):
+        """Add a persistent warning for settings changed but not saved to disk."""
+        self.unsaved_changes_label = QLabel(
+            "Unsaved changes — press Save to apply them.", self.tab2_content
+        )
+        self.unsaved_changes_label.setWordWrap(True)
+        self.unsaved_changes_label.setStyleSheet(
+            "QLabel { color: #8A4B00; background: #FFF3CD; "
+            "border: 1px solid #FFDA6A; border-radius: 4px; padding: 8px; }"
+        )
+        self.unsaved_changes_label.setVisible(False)
+        self.tab2_layout.insertWidget(
+            self.tab2_layout.indexOf(self.pause_button), self.unsaved_changes_label
+        )
+
+    def config_control_values(self):
+        """Return the editable configuration as it is currently displayed."""
+        return (
+            self.api_key_input.text(),
+            self.model_id_input.text(),
+            self.capture_interval_input.text(),
+            self.icon_scheme_combobox.currentText(),
+            self.ollama_checkbox.isChecked(),
+            self.dark_mode_checkbox.isChecked(),
+        )
+
+    def update_unsaved_changes_warning(self, *_args):
+        self.has_unsaved_config_changes = (
+            self.config_control_values() != self.saved_config_values
+        )
+        self.unsaved_changes_label.setVisible(self.has_unsaved_config_changes)
+
+    def mark_config_saved(self):
+        self.saved_config_values = self.config_control_values()
+        self.has_unsaved_config_changes = False
+        self.unsaved_changes_label.setVisible(False)
 
     def send_chat_message(self):
         message = self.message_input.text().strip()
@@ -610,6 +656,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
 
         self.load_config()
         self.apply_config_to_controls()
+        self.mark_config_saved()
         self.restart_capture_timer()
         self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
         self.show_message("Configuration saved successfully!")
@@ -626,6 +673,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
 
         self.load_config()
         self.apply_config_to_controls()
+        self.mark_config_saved()
         self.restart_capture_timer()
         self.status_label.setText(f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
         self.latest_description = ""
@@ -688,6 +736,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         if not all(isinstance(value, bool) for value in (notify, critical)) or not isinstance(message, str):
             print("Ignoring feedback notification response with an invalid schema.")
             return
+
+        self.log_prompt_response("ControlMe", reply)
+
         if not notify:
             return
 
@@ -698,7 +749,6 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.conversation.append({"role": "assistant", "content": message, "ts": ts})
         self.append_chat_message("ControlMe", message)
-        self.log_prompt_response("ControlMe", message)
         self.notify(message, critical=critical)
 
     def handle_feedback_notification_error(self, error, worker):
