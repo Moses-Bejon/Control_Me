@@ -2,6 +2,7 @@ import os
 import tempfile
 import uuid
 from datetime import datetime, timedelta
+import traceback
 
 import dotenv
 import markdown
@@ -137,6 +138,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.activity_memory = ActivityMemory(self.ACTIVITY_DATA_DIRECTORY)
         self.apply_config_to_controls()
         self.setup_runtime_ui()
+        self.setup_tray_icon()
         self.setup_capture_timer()
         self.setup_hourly_summary_timer()
         self.reconcile_completed_hours()
@@ -171,6 +173,73 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.conversation_text = scroll_area
         self.chat_messages_container = container
         self.chat_messages_layout = container_layout
+
+    def notify(self, message):
+        """Show a brief desktop notification that a screenshot was taken.
+
+        Uses the system tray if available; otherwise falls back to updating the status label.
+        """
+        try:
+            from PyQt6.QtWidgets import QSystemTrayIcon
+
+            if QSystemTrayIcon.isSystemTrayAvailable() and getattr(self, "tray_icon", None):
+                # Use the tray icon to display a transient notification
+                self.tray_icon.showMessage(
+                    "ControlMe",
+                    message,
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    3000,
+                )
+                return
+        except Exception:
+            traceback.print_exc()
+
+            # If anything goes wrong with the tray notification, fall back below
+
+            # Fallback: briefly update the status label so the user still sees feedback
+            try:
+                self.status_label.setText(message)
+            except Exception:
+                traceback.print_exc()
+
+    def setup_tray_icon(self):
+        """Create and show a system tray icon if the platform supports it.
+
+        This enables non-modal notifications using QSystemTrayIcon.showMessage.
+        Adds a context menu with an Exit action so the user can quit from the tray.
+        """
+        try:
+            from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+            from PyQt6.QtGui import QIcon, QAction
+
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.tray_icon = QSystemTrayIcon(self)
+                # Use the window icon if available; otherwise an empty QIcon
+                icon = self.windowIcon() or QIcon(self)
+                self.tray_icon.setIcon(icon)
+                self.tray_icon.setToolTip("Control Me")
+
+                # Build a simple context menu with an Exit
+                tray_menu = QMenu(self)
+                exit_action = QAction("Exit", self)
+                exit_action.triggered.connect(lambda: QApplication.instance().quit())
+                tray_menu.addAction(exit_action)
+
+                # Attach the menu to the tray icon
+                try:
+                    self.tray_icon.setContextMenu(tray_menu)
+                except Exception:
+                    # Some platforms may require a different API; ignore if it fails
+                    traceback.print_exc()
+
+                # Ensure the tray icon is visible so showMessage will work on many platforms
+                self.tray_icon.show()
+            else:
+                self.tray_icon = None
+        except Exception:
+            # If creating a tray icon fails for any reason, keep going without it
+            self.tray_icon = None
+            traceback.print_exc()
 
     def load_config(self):
         dotenv.load_dotenv(SCRLLM_ENV_FILE, override=True)
@@ -570,6 +639,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         except ImportError as exc:
             self.set_capture_loop_paused(True, "Capture loop paused because pyscreenshot is missing.")
             self.capture_in_progress = False
+            traceback.print_exc()
             self.show_error_message(str(exc))
             return
 
@@ -579,10 +649,18 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         except Exception as exc:
             self.set_capture_loop_paused(True, "Capture loop paused because the screen capture failed.")
             self.capture_in_progress = False
+            traceback.print_exc()
             self.show_error_message(str(exc))
             return
 
         self.current_capture_path = self.save_capture_to_tempfile(image)
+        # Notify the user that a screenshot was taken
+        try:
+            self.notify("test notification")
+        except Exception:
+            # Don't allow notification failures to interrupt the capture flow
+            traceback.print_exc()
+
         self.status_label.setText("Writing description...")
         self.update_compact_label()
         self.start_description_worker()

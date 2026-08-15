@@ -73,6 +73,7 @@ class ActivityMemory:
             try:
                 hour = datetime.strptime(path.stem, "%Y-%m-%d-%H")
             except ValueError:
+                traceback.print_exc()
                 continue
 
             if hour < current_hour and not self.has_summary(hour):
@@ -119,6 +120,7 @@ class ActivityMemory:
             try:
                 recorded_time = datetime.strptime(line[:8], "%H:%M:%S").time()
             except ValueError:
+                traceback.print_exc()
                 continue
             recorded_times.append(hour_start.replace(
                 hour=recorded_time.hour,
