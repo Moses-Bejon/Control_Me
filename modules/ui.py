@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import uuid
@@ -64,6 +65,16 @@ CHAT_SYSTEM_PROMPT = (
     "Make sure you do not include any timestamps in your responses. "
     "Do not respond: '[18:00] hey, you've been watching youtube for a while, maybe time to start doing something productive' "
 )
+FEEDBACK_NOTIFICATION_PROMPT = (
+    "Review the activity context and decide whether the user needs a timely productivity "
+    "notification right now. Only send one when it would be genuinely useful, such as after "
+    "a sustained or clear distraction. Do not notify for normal productive or neutral activity, "
+    "and avoid repeating advice already given. Reply with only a valid JSON object, with no Markdown "
+    "or surrounding text, using this exact schema: "
+    '{"notify": true, "critical": false, "message": "one short, supportive notification"}. '
+    "Set notify to false and message to an empty string when no notification is necessary. "
+    "Mark critical true only for a serious, sustained distraction that needs urgent attention."
+)
 
 
 class ChatMessageWidget(QFrame):
@@ -115,6 +126,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.current_capture_path = None
         self.current_worker = None
         self.chat_worker = None
+        self.feedback_worker = None
         self.conversation = []
         self.summary_workers = []
         self.pending_summary_hours = []
@@ -174,7 +186,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.chat_messages_container = container
         self.chat_messages_layout = container_layout
 
-    def notify(self, message):
+    def notify(self, message, critical = False):
         """Show a brief desktop notification that a screenshot was taken.
 
         Uses the system tray if available; otherwise falls back to updating the status label.
@@ -187,7 +199,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
                 self.tray_icon.showMessage(
                     "ControlMe",
                     message,
-                    QSystemTrayIcon.MessageIcon.Warning,
+                    QSystemTrayIcon.MessageIcon.Critical if critical else QSystemTrayIcon.MessageIcon.Warning,
                     3000,
                 )
                 return
@@ -303,10 +315,12 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
 
         self.load_config()
 
-        self.log_prompt_response(speaker="System", message = self.chat_messages_with_context())
+        messages = self.chat_messages_with_context()
+
+        self.log_prompt_response("System", messages)
 
         worker = ConversationWorker(
-            self.chat_messages_with_context(),
+            messages,
             self.LLM_API_MODEL,
             self.LLM_MODEL_ID,
             self.OLLAMA == "1",
@@ -618,6 +632,80 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.update_compact_label()
         self.show_message("Configuration reset successfully!")
 
+    def possibly_give_feedback_notification(self):
+        """Ask the coach whether the latest activity warrants a notification.
+
+        This runs separately from user-initiated chat so a slow notification decision never
+        blocks sending a message.  At most one decision can be in flight at a time.
+        """
+        if self.feedback_worker is not None:
+            return
+
+        self.load_config()
+        messages = self.chat_messages_with_context()
+        messages.append({"role": "system", "content": FEEDBACK_NOTIFICATION_PROMPT})
+
+        self.log_prompt_response("System", messages)
+
+        worker = ConversationWorker(
+            messages,
+            self.LLM_API_MODEL,
+            self.LLM_MODEL_ID,
+            self.OLLAMA == "1",
+        )
+        worker.finished.connect(
+            lambda reply, active_worker=worker: self.handle_feedback_notification_finished(
+                reply, active_worker
+            )
+        )
+        worker.error.connect(
+            lambda error, active_worker=worker: self.handle_feedback_notification_error(
+                error, active_worker
+            )
+        )
+        self.feedback_worker = worker
+        worker.start()
+
+    def handle_feedback_notification_finished(self, reply, worker):
+        if self.feedback_worker is not worker:
+            return
+
+        self.feedback_worker = None
+        response = reply.strip()
+        try:
+            decision = json.loads(response)
+        except (json.JSONDecodeError, TypeError):
+            print("Ignoring malformed feedback notification response.")
+            return
+
+        if not isinstance(decision, dict):
+            print("Ignoring feedback notification response that is not a JSON object.")
+            return
+
+        notify = decision.get("notify")
+        critical = decision.get("critical")
+        message = decision.get("message")
+        if not all(isinstance(value, bool) for value in (notify, critical)) or not isinstance(message, str):
+            print("Ignoring feedback notification response with an invalid schema.")
+            return
+        if not notify:
+            return
+
+        message = message.strip()
+        if not message:
+            return
+
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.conversation.append({"role": "assistant", "content": message, "ts": ts})
+        self.append_chat_message("ControlMe", message)
+        self.log_prompt_response("ControlMe", message)
+        self.notify(message, critical=critical)
+
+    def handle_feedback_notification_error(self, error, worker):
+        if self.feedback_worker is worker:
+            self.feedback_worker = None
+        print(f"Unable to generate feedback notification: {error}")
+
     def restart_capture_timer(self):
         self.capture_timer.stop()
         self.capture_timer.setInterval(self.CAPTURE_INTERVAL_SECONDS * 1000)
@@ -654,13 +742,6 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
             return
 
         self.current_capture_path = self.save_capture_to_tempfile(image)
-        # Notify the user that a screenshot was taken
-        try:
-            self.notify("test notification")
-        except Exception:
-            # Don't allow notification failures to interrupt the capture flow
-            traceback.print_exc()
-
         self.status_label.setText("Writing description...")
         self.update_compact_label()
         self.start_description_worker()
@@ -696,6 +777,11 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         cleaned = " ".join(description.split())
         self.latest_description = cleaned
         self.activity_memory.append_observation(datetime.now(), self.latest_description)
+        try:
+            self.possibly_give_feedback_notification()
+        except Exception:
+            # Don't allow notification failures to interrupt the capture flow.
+            traceback.print_exc()
         self.status_label.setText(
             f"Last updated {datetime.now().strftime('%H:%M:%S')} | every {self.CAPTURE_INTERVAL_SECONDS} seconds"
         )
