@@ -20,8 +20,8 @@ from .activity_memory import ActivityMemory
 from .text_generate import ConversationWorker, TextSummaryWorker
 
 SCRLLM_ENV_FILE = os.getenv("SCRLLM_ENV_FILE", ".env")
-DEFAULT_MODEL_ID = "gemini/gemini-3.1.flash-lite"
-DEFAULT_CAPTURE_INTERVAL_SECONDS = 60
+DEFAULT_MODEL_ID = "gemini/gemini-3.1-flash-lite"
+DEFAULT_CAPTURE_INTERVAL_SECONDS = 120
 DEFAULT_ACTIVITY_DATA_DIRECTORY = "~/.control_me/activity"
 COMPACT_WINDOW_WIDTH = 360
 COMPACT_WINDOW_HEIGHT = 170
