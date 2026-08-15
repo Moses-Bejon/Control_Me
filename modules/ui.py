@@ -58,8 +58,10 @@ CHAT_SYSTEM_PROMPT = (
     "You are the ControlMe productivity coach. Your job is to motivate the user to be as productive as possible. "
     "Use the activity as context for what you say to them. "
     "For example, the user might be watching youtube and have watched it for a while. "
-    "You might say:" 
-    "'hey, you've been watching youtube for a while, maybe time to start doing something productive'"
+    "You might say: " 
+    "'hey, you've been watching youtube for a while, maybe time to start doing something productive' \n\n"
+    "Make sure you do not include any timestamps in your responses. "
+    "Do not respond: '[18:00] hey, you've been watching youtube for a while, maybe time to start doing something productive' "
 )
 
 
@@ -225,7 +227,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
             return
 
         self.message_input.clear()
-        self.conversation.append({"role": "user", "content": message})
+        # Timestamp the outgoing user message for chronological interleaving
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.conversation.append({"role": "user", "content": message, "ts": ts})
         self.append_chat_message("You", message)
 
         self.load_config()
@@ -246,39 +250,118 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         worker.start()
 
     def chat_messages_with_context(self):
-        current_observations = self.activity_memory.read_hour(self.active_hour) or "No activity recorded yet."
+        """Build a chronologically-ordered list of messages for the LLM.
+
+        - Hourly summaries are added as user messages and labelled with their end timestamp ([end]).
+        - Each observation line in the current hour file becomes an individual user message
+          prefixed with an ISO-8601 timestamp so events sort chronologically.
+        - In-session conversation turns (self.conversation) must include a 'ts' ISO timestamp
+          value; user turns are exposed to the model with a visible timestamp prefix, while
+          assistant turns are included without an exposed timestamp but are ordered by their ts.
+        """
+        # Read stored data
+        current_observations = self.activity_memory.read_hour(self.active_hour) or ""
         summaries = self.activity_memory.summaries_for_date(
             self.active_hour.date(), exclude_hour=self.active_hour
         )
-        if summaries:
-            summary_context = "\n".join(
-                f"{hour_start}–{hour_end}: {summary}"
-                for hour_start, hour_end, summary in summaries
-            )
-        else:
-            summary_context = "No completed-hour summaries have been collected today."
 
-        context = (
-            "Activity context for this reply:\n"
-            f"Current hour ({self.active_hour:%Y-%m-%d %H}:00) observations:\n{current_observations}\n\n"
-            f"Other hourly summaries collected today:\n{summary_context}"
-        )
-        return [
-            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": context},
-            *self.conversation,
-        ]
+        # timezone info: use naive datetimes (no tzinfo)
+
+        system_msg = {"role": "system", "content": CHAT_SYSTEM_PROMPT}
+
+        # Gather events as (dt, message_dict) so everything can be sorted chronologically
+        events = []
+
+        # Hourly summaries: use the hour_end as the event time, format visible as [end]
+        if summaries:
+            for hour_start, hour_end, summary in summaries:
+                try:
+                    t = datetime.strptime(hour_end, "%H:%M:%S").time()
+                    dt = datetime(
+                        self.active_hour.year,
+                        self.active_hour.month,
+                        self.active_hour.day,
+                        t.hour,
+                        t.minute,
+                        t.second,
+                    )
+                except Exception:
+                    dt = datetime.now()
+                content = f"[{dt.strftime('%Y-%m-%d %H:%M:%S')}] {summary}"
+                events.append((dt, {"role": "user", "content": content}))
+
+        # Current-hour observations: each line becomes its own timestamped user message
+        for line in current_observations.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                possible_time = line[:8]
+                recorded_time = datetime.strptime(possible_time, "%H:%M:%S").time()
+                desc = line[8:].strip()
+                dt = datetime(
+                    self.active_hour.year,
+                    self.active_hour.month,
+                    self.active_hour.day,
+                    recorded_time.hour,
+                    recorded_time.minute,
+                    recorded_time.second,
+                )
+                content = f"[{dt.strftime('%Y-%m-%d %H:%M:%S')}] {desc}"
+            except Exception:
+                # Untimestamped observation -> place at hour start
+                dt = datetime(
+                    self.active_hour.year,
+                    self.active_hour.month,
+                    self.active_hour.day,
+                    self.active_hour.hour,
+                    0,
+                    0,
+                )
+                content = f"[{dt.strftime('%Y-%m-%d %H:%M:%S')}] {line}"
+            events.append((dt, {"role": "user", "content": content}))
+
+        # In-session conversation turns: include timestamps (ts) and interleave
+        for turn in self.conversation:
+            # default to now if no timestamp present
+            ts = turn.get("ts")
+            if ts:
+                try:
+                    dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    dt = datetime.now()
+            else:
+                dt = datetime.now()
+
+            if turn.get("role") == "user":
+                # Expose user message to LLM with visible timestamp
+                content = f"[{dt.strftime('%Y-%m-%d %H:%M:%S')}] {turn.get('content', '')}"
+                events.append((dt, {"role": "user", "content": content}))
+            else:
+                # Assistant messages should NOT include visible timestamps in content
+                events.append((dt, {"role": "assistant", "content": turn.get('content', '')}))
+
+        # Sort events chronologically
+        events.sort(key=lambda e: e[0])
+
+        # Assemble final messages list: system prompt first, then chronologically-ordered events
+        messages = [system_msg] + [msg for _dt, msg in events]
+
+        return messages
 
     def handle_chat_finished(self, reply, worker):
         reply = reply.strip()
-        self.conversation.append({"role": "assistant", "content": reply})
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Timestamp assistant reply for chronological interleaving but do NOT expose timestamp in content
+        self.conversation.append({"role": "assistant", "content": reply, "ts": ts})
         self.append_chat_message("ControlMe", reply)
         self.log_prompt_response("ControlMe", reply)
         self.finish_chat(worker)
 
     def handle_chat_error(self, error, worker):
         reply = f"I couldn't generate a reply: {error}"
-        self.conversation.append({"role": "assistant", "content": reply})
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.conversation.append({"role": "assistant", "content": reply, "ts": ts})
         self.append_chat_message("ControlMe", reply)
         self.log_prompt_response("ControlMe", reply)
         self.finish_chat(worker)
@@ -530,7 +613,10 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.current_worker = worker
 
     def handle_description_finished(self, description):
-        self.latest_description = description.strip()
+        # Collapse any internal newlines/spurious whitespace from the model into single spaces
+        # so each observation is written as a single line in the hourly file.
+        cleaned = " ".join(description.split())
+        self.latest_description = cleaned
         self.activity_memory.append_observation(datetime.now(), self.latest_description)
         self.status_label.setText(
             f"Last updated {datetime.now().strftime('%H:%M:%S')} | every {self.CAPTURE_INTERVAL_SECONDS} seconds"
