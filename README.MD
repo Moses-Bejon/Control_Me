@@ -12,22 +12,7 @@ Control Me is a Python application that monitors your screen activity on a confi
 * **Local Model Support:** Optionally analyze activity using a local Ollama model.
 * **Hourly Activity Summary:** Tracks your activity throughout the day and generates hourly summaries to help you reflect on your focus patterns.
 
-
-## Getting Started
-
-**Pre-built Executable:**
-
-For a quick start, download the pre-built executable:
-
-[Download](https://drive.google.com/file/d/1RTobs3usu4oucYrTiEIHWD84KjNASXWw/view?usp=sharing)
-
-1. Extract the downloaded zip file.
-2. Run `Control_Me.exe`.
-
-
-## Installation Instructions for Linux Users
-
-### Shell Script
+### Shell Script (Linux/MacOS)
 
 1. **Make the `Control_Me` script executable:**
 
@@ -43,7 +28,7 @@ For a quick start, download the pre-built executable:
 
 These steps will ensure that the `Installer.sh` script is executable, the necessary environment variables are set, and the `Control_Me` script can be run from any terminal session.
 
-### Pacman makepkg
+### Pacman makepkg (Arch)
 
 1. **Clone repo & navigate to *PKGBUILD***
 
@@ -62,21 +47,29 @@ This builds and installs the package. The **Control Me** desktop entry launches 
 - Manual start: `systemctl --user start control-me.service`
 - Start and enable on login: `systemctl --user enable --now control-me.service`
 
-**From Source Code:**
+### From Source Code (All platforms)
 
 1. **Install Dependencies:**
+
+   # Bash (Linux/MacOS):
    ```bash
    pip install -r requirements.txt
    ```
-
-2. **Configure Environment:** Create a `.env` file in the project's root directory and add your API keys and settings:
+   
+   # Windows PowerShell (Windows):
+      ```
+      py -m pip install -r requirements.txt
+      ```
+   
+2. **Configure Environment:** 
+   Create a `.env` file in the project's root directory and add your API keys and settings:
 
    ```
    LLM_API_KEY=YOUR_API_KEY  # Your API key for the LLM
-   LLM_MODEL_ID=gemini/gemini-3.1.flash-lite  # Default model ID
-   CAPTURE_INTERVAL_SECONDS=60  # How often to capture the screen
+   LLM_MODEL_ID=gemini/gemini-3.1-flash-lite  # Default model ID
+   CAPTURE_INTERVAL_SECONDS=120  # How often to capture the screen
    OLLAMA=0  # Set to 1 to enable local Ollama inference
-   ACTIVITY_DATA_DIRECTORY=~/.control_me/activity  # Optional location for activity text files and SQLite database
+   ACTIVITY_DATA_DIRECTORY=~/.control_me/activity  # Location for activity text files and SQLite database
    ```
 
 3. **Run the Application:**
@@ -84,6 +77,11 @@ This builds and installs the package. The **Control Me** desktop entry launches 
    ```bash
    python main.py
    ```
+   
+   # Windows PowerShell (Windows):
+      ```
+      py main.py
+      ```
 
 ## Usage
 
