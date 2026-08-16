@@ -74,13 +74,17 @@ CHAT_SYSTEM_PROMPT = (
 )
 FEEDBACK_NOTIFICATION_PROMPT = (
     "Review the activity context and decide whether the user needs a timely productivity "
-    "notification right now. Only send one when it would be genuinely useful, such as after "
-    "a sustained or clear distraction. Do not notify for normal productive or neutral activity, "
-    "and avoid repeating advice already given. Reply with only a valid JSON object, with no Markdown "
-    "or surrounding text, using this exact schema: "
-    '{"notify": true, "critical": false, "message": "one short, supportive notification"}. '
+    "notification right now. Only send one when it would be genuinely useful, such as during "
+    "a sustained or clear distraction. The distraction must be currently happening: prioritize "
+    "the most recent activity in the log. Treat older activity only as supporting context, "
+    "not as evidence that a distraction is happening now. If the most recent activity is "
+    "productive or neutral, do not notify merely because older activity contained distractions. "
+    "Do not notify for normal productive or neutral activity, and avoid repeating advice already "
+    "given. Reply with only a valid JSON object, with no Markdown or surrounding text, using this "
+    'exact schema: {"notify": true, "critical": false, "message": "one short, supportive notification"}. '
     "Set notify to false and message to an empty string when no notification is necessary. "
-    "Mark critical true only for a serious, sustained distraction that needs urgent attention."
+    "Mark critical true only for a serious, sustained distraction that is currently happening "
+    "and needs urgent attention."
 )
 
 
