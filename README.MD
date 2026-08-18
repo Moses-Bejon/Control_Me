@@ -51,12 +51,12 @@ This builds and installs the package. The **Control Me** desktop entry launches 
 
 1. **Install Dependencies:**
 
-   # Bash (Linux/MacOS):
+   #### Bash (Linux/MacOS):
    ```bash
    pip install -r requirements.txt
    ```
    
-   # Windows PowerShell (Windows):
+   #### Windows PowerShell (Windows):
       ```
       py -m pip install -r requirements.txt
       ```
@@ -73,12 +73,13 @@ This builds and installs the package. The **Control Me** desktop entry launches 
    ```
 
 3. **Run the Application:**
-
+   
+   #### Bash (Linux/MacOS):
    ```bash
    python main.py
    ```
    
-   # Windows PowerShell (Windows):
+   #### Windows PowerShell (Windows):
       ```
       py main.py
       ```
