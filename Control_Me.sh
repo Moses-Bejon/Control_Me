@@ -1,32 +1,71 @@
-#!/bin/bash
-i=
-# Define the lock file path
-LOCKFILE="/tmp/control_me.lock"
+#!/usr/bin/env bash
 
-# Define the virtual environment path
-# Embed trailing slash to retain relative path capability
-VENVPATH="${VENVPATH:-$HOME/.control_me/}"
+# Resolve the directory of this script (handles symlinks)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
-# This makes it easy to run in basic environments like Git Bash for Windows
+# Allow overriding project dir; default to the script's directory
+PROJECT_DIR="${SCRLLM_PROJECT_DIR:-$SCRIPT_DIR}"
+
+# Move to project directory so relative paths behave consistently
+cd "$PROJECT_DIR" || {
+  echo "Failed to cd to project directory: $PROJECT_DIR"
+  exit 1
+}
+
+# Configuration (overridable via env)
+
+# lock file
+LOCKFILE="${SCRLLM_LOCKFILE:-/tmp/control_me.lock}"
+
+# Virtual environment directory (defaults to project-local .venv/)
+# Trailing slash preserved to keep relative semantics if overridden
+DEFAULT_VENV="${PROJECT_DIR}/.venv/"
+VENVPATH="${VENVPATH:-$DEFAULT_VENV}"
+
+# Main and requirements paths (relative to the project dir by default)
+MAIN="${SCRLLM_MAIN:-$PROJECT_DIR/main.py}"
+REQUIREMENTS="${SCRLLM_REQUIREMENTS:-$PROJECT_DIR/requirements.txt}"
+LOGFILE="${SCRLLM_LOGFILE:-$PROJECT_DIR/output.log}"
+
 check_running() {
+    # $1: pattern to search for
     if hash pgrep &>/dev/null; then
         pgrep -f "$1" &>/dev/null
-    elif [[ "$OSTYPE" =~ ^cygwin|msys$ ]]; then
-        find /proc -maxdepth 1 -type d -regextype sed -regex '^.\+/[0-9]\+' -exec bash -c 'xargs -0 < {}/cmdline' \; | grep "$1" &>/dev/null
+    elif [[ "$OSTYPE" == cygwin* || "$OSTYPE" == msys* ]]; then
+        # Git Bash/Cygwin fallback
+        find /proc -maxdepth 1 -type d -regextype sed -regex '^.\+/[0-9]\+' \
+          -exec bash -c 'xargs -0 < {}/cmdline' \; | grep -F "$1" &>/dev/null
     else
-        ps -ef | grep "$1" &>/dev/null
+        ps -ef | grep -F "$1" | grep -v grep &>/dev/null
     fi
 }
 
-# Function to pause the script
 pause_script() {
-    # Determine if executed via systemd unit
     if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
         echo "An error occurred. Pausing the script. Press [Enter] to continue..."
-        rm "$LOCKFILE"
+        [ -f "$LOCKFILE" ] && rm -f "$LOCKFILE"
         read
     fi
     exit 1
+}
+
+detect_python() {
+    if command -v python3 >/dev/null 2>&1; then
+        echo "python3"
+    elif command -v python >/dev/null 2>&1; then
+        echo "python"
+    elif command -v py >/dev/null 2>&1; then
+        # Windows Python launcher
+        echo "py -3"
+    else
+        return 1
+    fi
 }
 
 # Prepare env file
@@ -35,82 +74,79 @@ if [[ -n "$SCRLLM_ENV_FILE" && ! -e "$SCRLLM_ENV_FILE" ]]; then
     touch "$SCRLLM_ENV_FILE"
 fi
 
-# Check if the lock file exists
+# -------------------------------
+# Locking (skip when run from systemd)
+# -------------------------------
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
     if [ -e "$LOCKFILE" ]; then
-        echo "Another instance of the script is already running. Exiting."
+        echo "Another instance is already running. Exiting."
         pause_script
     else
-        # Create the lock file
-        touch "$LOCKFILE"
+        touch "$LOCKFILE" || { echo "Failed to create lockfile: $LOCKFILE"; pause_script; }
+        # Ensure lock removal on exit
+        trap 'status=$?; [ -f "$LOCKFILE" ] && rm -f "$LOCKFILE"; exit $status' EXIT
     fi
 fi
 
-# Ensure the virtual environment is created and activated
-if [ ! -d "${VENVPATH}venv" ]; then
-    echo "Virtual environment not found. Creating one..."
-    mkdir -p $VENVPATH
-    python3 -m venv "${VENVPATH}venv"
-    if [ $? -ne 0 ]; then
-        echo "Failed to create virtual environment."
-        pause_script
-    fi
+# Ensure venv exists
+PY_CMD="$(detect_python)" || { echo "Python not found on PATH."; pause_script; }
+
+if [ ! -d "${VENVPATH%/}" ]; then
+    echo "Virtual environment not found at ${VENVPATH}. Creating one..."
+    mkdir -p "${VENVPATH%/}" || { echo "Failed to create venv directory: ${VENVPATH}"; pause_script; }
+    # shellcheck disable=SC2086
+    $PY_CMD -m venv "${VENVPATH%/}" || { echo "Failed to create virtual environment."; pause_script; }
 fi
 
-# Activate the virtual environment
-if [[ "$OSTYPE" =~ ^cygwin|msys$ ]]; then
+# Activate venv
+if [[ "$OSTYPE" == cygwin* || "$OSTYPE" == msys* ]]; then
     [ -z "$SCREENSHOT_DIRECTORY" ] && SCREENSHOT_DIRECTORY="${HOME}/Pictures/Screenshots"
-    source ${VENVPATH}venv/Scripts/activate
+    ACTIVATE="${VENVPATH%/}/Scripts/activate"
 else
-    source ${VENVPATH}venv/bin/activate
+    ACTIVATE="${VENVPATH%/}/bin/activate"
 fi
 
-# Check if the virtual environment was activated successfully
-if [ $? -ne 0 ]; then
-    echo "Failed to activate virtual environment."
-    pause_script
-fi
+# shellcheck disable=SC1090
+source "$ACTIVATE" || { echo "Failed to activate virtual environment at $ACTIVATE"; pause_script; }
 
-# Install required Python packages if requirements.txt exists
-if [ -f "requirements.txt" ]; then
+# Install requirements (if present)
+if [ -f "$REQUIREMENTS" ]; then
     if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-        pip install -r requirements.txt > /dev/null 2>&1
+        python -m pip install -r "$REQUIREMENTS" >/dev/null 2>&1
     else
-        # Log everything when executed via systemd
-        pip install -r requirements.txt
+        python -m pip install -r "$REQUIREMENTS"
     fi
     if [ $? -ne 0 ]; then
-        echo "Failed to install required Python packages."
+        echo "Failed to install required Python packages from $REQUIREMENTS."
         pause_script
     fi
 fi
 
-# Check if the Python script is already running
+# Prevent duplicate runs (when not systemd)
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    if check_running "main.py --control_me"; then
+    RUN_PATTERN="$MAIN --control_me"
+    if check_running "$RUN_PATTERN"; then
         echo "Python script is already running. Exiting."
-        rm "$LOCKFILE"
+        rm -f "$LOCKFILE"
         exit 1
     fi
 fi
 
-# Run the main Python script in the background with nohup when run without systemd
-# Send a bogus argument to match on to avoid conflicts managing the process
+# Launch
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    nohup python -u main.py --control_me > ${VENVPATH}/output.log 2>&1 &
+    nohup python -u "$MAIN" --control_me > "$LOGFILE" 2>&1 &
+    rc=$?
 else
-    python3 -u main.py --control_me
+    python -u "$MAIN" --control_me
+    rc=$?
 fi
 
-# Check if the script was started successfully when run without systemd
+# Post-launch check (non-systemd)
 if [ -z "$SCRLLM_SYSTEMD_UNIT" ]; then
-    if [ $? -eq 0 ]; then
-        echo "Python script started successfully. Check 'output.log' for output."
+    if [ $rc -eq 0 ]; then
+        echo "Python script started successfully. Check '$LOGFILE' for output."
     else
         echo "Failed to start the Python script."
         pause_script
     fi
-
-    # The lock file will be removed automatically when the script exits
-    trap "rm -f $LOCKFILE" EXIT
 fi
