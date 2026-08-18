@@ -22,6 +22,7 @@ from .text_generate import ConversationWorker, TextSummaryWorker
 SCRLLM_ENV_FILE = os.getenv("SCRLLM_ENV_FILE", ".env")
 DEFAULT_MODEL_ID = "gemini/gemini-3.1-flash-lite"
 DEFAULT_CAPTURE_INTERVAL_SECONDS = 120
+PAUSE_REMINDER_INTERVAL_MILLISECONDS = 120_000
 DEFAULT_ACTIVITY_DATA_DIRECTORY = "~/.control_me/activity"
 COMPACT_WINDOW_WIDTH = 360
 COMPACT_WINDOW_HEIGHT = 170
@@ -163,6 +164,7 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.setup_runtime_ui()
         self.setup_tray_icon()
         self.setup_capture_timer()
+        self.setup_pause_reminder_timer()
         self.setup_hourly_summary_timer()
         self.reconcile_completed_hours()
 
@@ -197,8 +199,8 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.chat_messages_container = container
         self.chat_messages_layout = container_layout
 
-    def notify(self, message, critical = False):
-        """Show a brief desktop notification that a screenshot was taken.
+    def notify(self, message, critical=False):
+        """Show a brief desktop notification.
 
         Uses the system tray if available; otherwise falls back to updating the status label.
         """
@@ -217,13 +219,11 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         except Exception:
             traceback.print_exc()
 
-            # If anything goes wrong with the tray notification, fall back below
-
-            # Fallback: briefly update the status label so the user still sees feedback
-            try:
-                self.status_label.setText(message)
-            except Exception:
-                traceback.print_exc()
+        # Fallback when no system tray is available, or tray notifications fail.
+        try:
+            self.status_label.setText(message)
+        except Exception:
+            traceback.print_exc()
 
     def setup_tray_icon(self):
         """Create and show a system tray icon if the platform supports it.
@@ -536,6 +536,19 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.pause_button.setText("⏸ Pause")
         self.update_compact_label()
 
+    def setup_pause_reminder_timer(self):
+        """Remind the user until they resume a paused capture loop."""
+        self.pause_reminder_timer = QTimer(self)
+        self.pause_reminder_timer.setInterval(PAUSE_REMINDER_INTERVAL_MILLISECONDS)
+        self.pause_reminder_timer.timeout.connect(self.send_pause_reminder)
+
+    def send_pause_reminder(self):
+        if self.capture_paused:
+            self.notify(
+                "ControlMe is still paused. Select Resume to restart activity capture.",
+                critical=True,
+            )
+
     def setup_hourly_summary_timer(self):
         self.hourly_summary_timer = QTimer(self)
         self.hourly_summary_timer.setSingleShot(True)
@@ -630,17 +643,22 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.queued_summary_hours.discard(completed_hour)
         self.start_next_hourly_summary()
 
-    def set_capture_loop_paused(self, paused, message=None):
+    def set_capture_loop_paused(self, paused, message=None, notify_immediately=False):
         self.capture_paused = paused
         if paused:
             self.capture_timer.stop()
             self.pause_button.setText("▶ Resume")
             if message:
                 self.status_label.setText(message)
+            if not self.pause_reminder_timer.isActive():
+                self.pause_reminder_timer.start()
+            if notify_immediately:
+                self.notify(message or "ControlMe paused activity capture.", critical=True)
         else:
             self.pause_button.setText("⏸ Pause")
             self.status_label.setText(message or f"Capturing every {self.CAPTURE_INTERVAL_SECONDS} seconds.")
             self.capture_timer.start()
+            self.pause_reminder_timer.stop()
         self.update_compact_label()
 
     def toggle_capture_loop(self):
@@ -786,7 +804,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         try:
             import pyscreenshot as ImageGrab
         except ImportError as exc:
-            self.set_capture_loop_paused(True, "Capture loop paused because pyscreenshot is missing.")
+            self.set_capture_loop_paused(
+                True, "Capture loop paused because pyscreenshot is missing.", notify_immediately=True
+            )
             self.capture_in_progress = False
             traceback.print_exc()
             self.show_error_message(str(exc))
@@ -796,7 +816,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
             image = ImageGrab.grab()
             image.thumbnail((1000, 700))
         except Exception as exc:
-            self.set_capture_loop_paused(True, "Capture loop paused because the screen capture failed.")
+            self.set_capture_loop_paused(
+                True, "Capture loop paused because the screen capture failed.", notify_immediately=True
+            )
             self.capture_in_progress = False
             traceback.print_exc()
             self.show_error_message(str(exc))
@@ -817,7 +839,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.load_config()
         model_id = (self.LLM_MODEL_ID or "").strip()
         if not model_id:
-            self.set_capture_loop_paused(True, "Capture loop paused because the model ID is missing.")
+            self.set_capture_loop_paused(
+                True, "Capture loop paused because the model ID is missing.", notify_immediately=True
+            )
             self.capture_in_progress = False
             self.show_error_message("Model ID is required.")
             return
@@ -850,7 +874,9 @@ class ScreenshotAnalyzer(QMainWindow, Ui_MainWindow):
         self.finish_capture_cycle()
 
     def handle_description_error(self, error):
-        self.set_capture_loop_paused(True, "Capture loop paused because description generation failed.")
+        self.set_capture_loop_paused(
+            True, "Capture loop paused because description generation failed.", notify_immediately=True
+        )
         self.show_error_message(error)
         self.finish_capture_cycle()
 
