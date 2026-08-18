@@ -33,25 +33,25 @@ ui_elements = {
     "settings_button": "Settings",
 }
 
-class Ui_MainWindow(object):
-    def setupUi(self, MainWindow):
-        self.MainWindow = MainWindow
+class UiMainWindow:
+    def setup_ui(self, window: QtWidgets.QMainWindow) -> None:
+        self.main_window = window
 
         # Convert DARK_MODE environment variable to boolean
         self.dark_mode = False
 
         self.icon_scheme = os.environ.get("ICON_SCHEME", "default")
 
-        self.MainWindow.setObjectName("MainWindow")
-        self.MainWindow.resize(1200, 900)
-        self.MainWindow.setMinimumSize(180, 44)
+        self.main_window.setObjectName("MainWindow")
+        self.main_window.resize(1200, 900)
+        self.main_window.setMinimumSize(180, 44)
         self.apply_stylesheet()
         font = QtGui.QFont("Segoe UI", 11)
 
         # Set window flags to make it always on top
-        self.MainWindow.setWindowFlags(QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.main_window.setWindowFlags(QtCore.Qt.WindowType.WindowStaysOnTopHint)
 
-        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.centralwidget = QtWidgets.QWidget(window)
         self.centralwidget.setObjectName("centralwidget")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.centralwidget)
         self.verticalLayout.setObjectName("verticalLayout")
@@ -80,22 +80,22 @@ class Ui_MainWindow(object):
         self.compact_label.setVisible(False)
         self.verticalLayout.addWidget(self.compact_label)
 
-        MainWindow.setCentralWidget(self.centralwidget)
+        window.setCentralWidget(self.centralwidget)
 
-        self.retranslateUi(MainWindow)
-        QtCore.QMetaObject.connectSlotsByName(MainWindow)
+        self.retranslate_ui(window)
+        QtCore.QMetaObject.connectSlotsByName(window)
 
         # Set default position to top-right corner of the screen
         screen_geometry = QtGui.QGuiApplication.primaryScreen().geometry()
-        x = screen_geometry.width() - self.MainWindow.width()
+        x = screen_geometry.width() - self.main_window.width()
         y = 0
-        self.MainWindow.move(x, y)
+        self.main_window.move(x, y)
 
         # Set window icon
         icon = QtGui.QIcon("icon.ico")
-        self.MainWindow.setWindowIcon(icon)
+        self.main_window.setWindowIcon(icon)
 
-    def setup_main_tab(self, font):
+    def setup_main_tab(self, font: QtGui.QFont) -> None:
         self.tab1 = QtWidgets.QWidget()
         self.tab1.setObjectName("tab1")
         self.tab1.setMinimumSize(0, 0)
@@ -121,7 +121,7 @@ class Ui_MainWindow(object):
         message_layout.addWidget(self.send_button)
         self.tab1_layout.addLayout(message_layout)
 
-    def setup_settings_tab(self, font):
+    def setup_settings_tab(self, font: QtGui.QFont) -> None:
         self.tab2 = QtWidgets.QScrollArea()
         self.tab2.setObjectName("tab2")
         self.tab2.setMinimumSize(0, 0)
@@ -206,30 +206,38 @@ class Ui_MainWindow(object):
         self.tab2_layout.addStretch(1)
         self.tab2.setWidget(self.tab2_content)
 
-    def toggle_dark_mode(self, state):
+    def toggle_dark_mode(self, state: int) -> None:
         self.dark_mode = state == QtCore.Qt.CheckState.Checked.value
         self.apply_stylesheet()
 
         # Update the DARK_MODE environment variable
         os.environ["DARK_MODE"] = "1" if self.dark_mode else "0"
 
-    def change_icon_scheme(self, icon_scheme):
+    def change_icon_scheme(self, icon_scheme: str) -> None:
         self.icon_scheme = icon_scheme
-        self.MainWindow.findChild(QtWidgets.QLabel, "icon_scheme_label").setText("Icon Scheme\n{}".format(" ".join(list(ui_icon_schemes[icon_scheme].values()))))
+        self.icon_scheme_label.setText(
+            "Icon Scheme\n{}".format(" ".join(ui_icon_schemes[icon_scheme].values()))
+        )
 
-        self.MainWindow.findChild(QtWidgets.QTabWidget, "tab_widget").setTabText(0, f"{ui_icon_schemes[icon_scheme]["main_icon"]}{ui_elements["main_button"]}")
-        self.MainWindow.findChild(QtWidgets.QTabWidget, "tab_widget").setTabText(1, f"{ui_icon_schemes[icon_scheme]["settings_icon"]}{ui_elements["settings_button"]}")
+        self.tab_widget.setTabText(
+            0,
+            f"{ui_icon_schemes[icon_scheme]["main_icon"]}{ui_elements["main_button"]}",
+        )
+        self.tab_widget.setTabText(
+            1,
+            f"{ui_icon_schemes[icon_scheme]["settings_icon"]}{ui_elements["settings_button"]}",
+        )
 
         # Update the ICON_SCHEME environment variable
         os.environ["ICON_SCHEME"] = self.icon_scheme
 
-    def apply_stylesheet(self):
+    def apply_stylesheet(self) -> None:
         if self.dark_mode:
-            self.MainWindow.setStyleSheet(self.get_dark_stylesheet())
+            self.main_window.setStyleSheet(self.get_dark_stylesheet())
         else:
-            self.MainWindow.setStyleSheet(self.get_light_stylesheet())
+            self.main_window.setStyleSheet(self.get_light_stylesheet())
 
-    def get_light_stylesheet(self):
+    def get_light_stylesheet(self) -> str:
         return """
             QMainWindow, QWidget {
                 background-color: #ffffff;
@@ -298,7 +306,7 @@ class Ui_MainWindow(object):
             }
         """
 
-    def get_dark_stylesheet(self):
+    def get_dark_stylesheet(self) -> str:
         return """
             QMainWindow, QWidget {
                 background-color: #2c2c2c;
@@ -367,37 +375,43 @@ class Ui_MainWindow(object):
             }
         """
 
-    def create_label(self, text=""):
+    def create_label(self, text: str = "") -> QtWidgets.QLabel:
         label = QtWidgets.QLabel(text, self.centralwidget)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         label.setWordWrap(True)
         label.setMinimumHeight(42)
         return label
 
-    def create_text_edit(self, font):
+    def create_text_edit(self, font: QtGui.QFont) -> QtWidgets.QTextEdit:
         text_edit = QtWidgets.QTextEdit(self.centralwidget)
         text_edit.setFont(font)
         text_edit.setPlaceholderText("The live description appears here.")
         text_edit.setReadOnly(True)
         return text_edit
 
-    def create_line_edit(self, font):
+    def create_line_edit(self, font: QtGui.QFont) -> QtWidgets.QLineEdit:
         line_edit = QtWidgets.QLineEdit(self.centralwidget)
         line_edit.setPlaceholderText("Enter Your Message 💬")
         line_edit.setFont(font)
         line_edit.setMinimumHeight(46)
         return line_edit
 
-    def create_button(self, text, font, sizeX = 0, sizeY = 0):
+    def create_button(
+        self,
+        text: str,
+        font: QtGui.QFont,
+        minimum_width: int = 0,
+        minimum_height: int = 0,
+    ) -> QtWidgets.QPushButton:
         button = QtWidgets.QPushButton(text, self.centralwidget)
         button.setFont(font)
-        button.setMinimumWidth(sizeX)
-        button.setMinimumHeight(sizeY or 46)
+        button.setMinimumWidth(minimum_width)
+        button.setMinimumHeight(minimum_height or 46)
         return button
 
-    def retranslateUi(self, MainWindow):
+    def retranslate_ui(self, window: QtWidgets.QMainWindow) -> None:
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "Control Me"))
+        window.setWindowTitle(_translate("MainWindow", "Control Me"))
 
 if __name__ == "__main__":
     import sys
@@ -405,8 +419,8 @@ if __name__ == "__main__":
     app.setApplicationName("Control Me")
     app.setDesktopFileName("Control_Me")
     app.setWindowIcon(QtGui.QIcon("icon.ico"))
-    MainWindow = QtWidgets.QMainWindow()
-    ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
-    MainWindow.show()
+    main_window = QtWidgets.QMainWindow()
+    ui = UiMainWindow()
+    ui.setup_ui(main_window)
+    main_window.show()
     sys.exit(app.exec())    

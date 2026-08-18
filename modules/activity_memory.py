@@ -1,19 +1,20 @@
 import sqlite3
-from datetime import datetime, timedelta
+import traceback
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
 class ActivityMemory:
     """Persists raw hourly observations and their one-sentence summaries."""
 
-    def __init__(self, data_directory):
+    def __init__(self, data_directory: str | Path) -> None:
         self.data_directory = Path(data_directory).expanduser()
         self.hours_directory = self.data_directory / "hours"
         self.database_path = self.data_directory / "activity_memory.db"
         self.hours_directory.mkdir(parents=True, exist_ok=True)
         self._create_database()
 
-    def _create_database(self):
+    def _create_database(self) -> None:
         with sqlite3.connect(self.database_path) as connection:
             connection.execute(
                 """
@@ -27,22 +28,22 @@ class ActivityMemory:
                 """
             )
 
-    def hourly_file_path(self, hour):
+    def hourly_file_path(self, hour: datetime) -> Path:
         hour_start = hour.replace(minute=0, second=0, microsecond=0)
         return self.hours_directory / f"{hour_start:%Y-%m-%d-%H}.txt"
 
-    def append_observation(self, observed_at, description):
+    def append_observation(self, observed_at: datetime, description: str) -> None:
         path = self.hourly_file_path(observed_at)
         with path.open("a", encoding="utf-8") as activity_file:
             activity_file.write(f"{observed_at:%H:%M:%S} {description.strip()}\n")
 
-    def read_hour(self, hour):
+    def read_hour(self, hour: datetime) -> str:
         path = self.hourly_file_path(hour)
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8").strip()
 
-    def has_summary(self, hour):
+    def has_summary(self, hour: datetime) -> bool:
         """Return whether ``hour`` already has a stored summary."""
         hour_start = hour.replace(minute=0, second=0, microsecond=0)
         hour_end = hour_start + timedelta(hours=1)
@@ -62,7 +63,7 @@ class ActivityMemory:
             row = connection.execute(query, parameters).fetchone()
         return row is not None
 
-    def completed_unsummarized_hours(self, now=None):
+    def completed_unsummarized_hours(self, now: datetime | None = None) -> list[datetime]:
         """Return recorded hours that ended before ``now`` and need a summary."""
         current_hour = (now or datetime.now()).replace(
             minute=0, second=0, microsecond=0
@@ -81,7 +82,9 @@ class ActivityMemory:
 
         return sorted(completed_hours)
 
-    def summaries_for_date(self, date, exclude_hour=None):
+    def summaries_for_date(
+        self, on_date: date, exclude_hour: datetime | None = None
+    ) -> list[tuple[str, str, str]]:
         """Return stored summaries for ``date``, ordered by their activity window."""
         excluded_start = None
         excluded_end = None
@@ -97,7 +100,7 @@ class ActivityMemory:
                 WHERE date = ?
                 ORDER BY hour_start
                 """,
-                (date.isoformat(),),
+                (on_date.isoformat(),),
             ).fetchall()
 
         summaries = []
@@ -110,7 +113,9 @@ class ActivityMemory:
             summaries.append((hour_start, hour_end, summary))
         return summaries
 
-    def summary_window(self, hour, observations, capture_interval_seconds):
+    def summary_window(
+        self, hour: datetime, observations: str, capture_interval_seconds: int
+    ) -> tuple[datetime, datetime]:
         """Return the recorded activity window, constrained to ``hour``."""
         hour_start = hour.replace(minute=0, second=0, microsecond=0)
         hour_end = hour_start + timedelta(hours=1)
@@ -137,7 +142,13 @@ class ActivityMemory:
             min(hour_end, max(recorded_times) + interval),
         )
 
-    def save_summary(self, hour, summary, observations, capture_interval_seconds):
+    def save_summary(
+        self,
+        hour: datetime,
+        summary: str,
+        observations: str,
+        capture_interval_seconds: int,
+    ) -> None:
         activity_start, activity_end = self.summary_window(
             hour, observations, capture_interval_seconds
         )

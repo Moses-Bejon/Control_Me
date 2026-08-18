@@ -9,7 +9,14 @@ class TextSummaryWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, observations, api_key, model_id, use_ollama, prompt):
+    def __init__(
+        self,
+        observations: str,
+        api_key: str | None,
+        model_id: str,
+        use_ollama: bool,
+        prompt: str,
+    ) -> None:
         super().__init__()
         self.observations = observations
         self.api_key = api_key
@@ -17,7 +24,7 @@ class TextSummaryWorker(QThread):
         self.use_ollama = use_ollama
         self.prompt = prompt
 
-    def run(self):
+    def run(self) -> None:
         try:
             message = f"{self.prompt}\n\nHourly observations:\n{self.observations}"
             if self.use_ollama:
@@ -43,14 +50,20 @@ class ConversationWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, messages, api_key, model_id, use_ollama):
+    def __init__(
+        self,
+        messages: list[dict[str, object]],
+        api_key: str | None,
+        model_id: str,
+        use_ollama: bool,
+    ) -> None:
         super().__init__()
         self.messages = messages
         self.api_key = api_key
         self.model_id = model_id
         self.use_ollama = use_ollama
 
-    def run(self):
+    def run(self) -> None:
         try:
             if self.use_ollama:
                 response = chat(model=self.model_id, messages=self.messages)

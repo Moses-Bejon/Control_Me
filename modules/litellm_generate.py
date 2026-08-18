@@ -6,18 +6,24 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from litellm import completion
 
 
-class Worker_litellm(QThread):
+class WorkerLitellm(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, image_path, LLM_API_MODEL, LLM_MODEL_ID, prompt):
+    def __init__(
+        self,
+        image_path: str,
+        llm_api_model: str | None,
+        llm_model_id: str,
+        prompt: str,
+    ) -> None:
         super().__init__()
         self.image_path = image_path
-        self.LLM_API_MODEL = LLM_API_MODEL
-        self.LLM_MODEL_ID = LLM_MODEL_ID
+        self.llm_api_model = llm_api_model
+        self.llm_model_id = llm_model_id
         self.prompt = prompt
 
-    def run(self):
+    def run(self) -> None:
         try:
             with open(self.image_path, "rb") as image_file:
                 image_b64 = base64.b64encode(image_file.read()).decode("utf-8")
@@ -27,7 +33,7 @@ class Worker_litellm(QThread):
             image_url = f"data:{mime_type};base64,{image_b64}"
 
             response = completion(
-                model=self.LLM_MODEL_ID,
+                model=self.llm_model_id,
                 messages=[
                     {
                         "role": "user",
@@ -37,7 +43,7 @@ class Worker_litellm(QThread):
                         ],
                     }
                 ],
-                api_key=self.LLM_API_MODEL if self.LLM_API_MODEL is not None else None,
+                api_key=self.llm_api_model,
             )
             self.finished.emit(response.choices[0].message.content)
         except Exception as e:
